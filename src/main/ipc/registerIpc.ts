@@ -102,7 +102,7 @@ export function registerIpc(
       copilotAdapter.probeAuth()
     ]);
     const models = modelsResult.status === 'fulfilled' ? modelsResult.value : [];
-    const reconciledSettings = reconcileBootstrapSettings(settings, models);
+    const reconciledSettings = reconcileBootstrapSettings(settings, models, isTrustworthyModelCatalog(modelsResult));
 
     if (reconciledSettings !== settings) {
       await settingsStore.save(reconciledSettings);
@@ -206,8 +206,8 @@ function classifyPromptFailure(input: { message: string; stderr: string; stdout:
   });
 }
 
-function reconcileBootstrapSettings(settings: AppSettings, models: string[]): AppSettings {
-  if (settings.selectedModel === null) {
+function reconcileBootstrapSettings(settings: AppSettings, models: string[], canReconcile: boolean): AppSettings {
+  if (!canReconcile || settings.selectedModel === null) {
     return settings;
   }
 
@@ -219,6 +219,10 @@ function reconcileBootstrapSettings(settings: AppSettings, models: string[]): Ap
     ...settings,
     selectedModel: models[0] ?? null
   };
+}
+
+function isTrustworthyModelCatalog(result: PromiseSettledResult<string[]>): boolean {
+  return result.status === 'fulfilled' && result.value.length > 0;
 }
 
 function extractStringProperty(value: unknown, key: string): string {

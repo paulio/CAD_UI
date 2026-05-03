@@ -201,6 +201,40 @@ describe('registerIpc', () => {
     });
   });
 
+  it('preserves the saved model when discovery returns an empty catalog', async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.listModels.mockResolvedValue([]);
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: 'gpt-5.4',
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save
+      } as never,
+      copilotAdapter
+    );
+
+    const loadBootstrap = handlers.get(ipcChannels.loadBootstrap);
+    const bootstrap = await loadBootstrap?.({}, undefined);
+
+    expect(bootstrap).toEqual({
+      authState: 'ready',
+      models: [],
+      settings: {
+        selectedModel: 'gpt-5.4',
+        recentDrawings: [],
+        lastDrawingPath: null,
+        windowBounds: null
+      }
+    });
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it('uses checking instead of cli-missing when auth probing fails unexpectedly', async () => {
     const copilotAdapter = createCopilotAdapterStub();
     copilotAdapter.probeAuth.mockRejectedValue(new Error('timed out'));
