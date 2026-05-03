@@ -9,6 +9,15 @@ describe('App shell', () => {
   });
 
   it('renders the CAD UI chrome and drives the drawing highlight workflow', async () => {
+    const sessionDiagnostics = [
+      {
+        timestamp: '2026-05-03T12:00:00.000Z',
+        source: 'cad-ai',
+        level: 'info' as const,
+        message: 'Opened drawing session for D:/drawings/site.dxf',
+        detail: 'D:/drawings/.cadqcache'
+      }
+    ];
     const saveSettings = vi.fn().mockResolvedValue(undefined);
     const openDrawing = vi.fn().mockResolvedValue({
       canceled: false,
@@ -68,15 +77,7 @@ describe('App shell', () => {
         }
       },
       error: null,
-      diagnostics: [
-        {
-          timestamp: '2026-05-03T12:00:00.000Z',
-          source: 'cad-ai',
-          level: 'info',
-          message: 'Opened drawing session for D:/drawings/site.dxf',
-          detail: 'D:/drawings/.cadqcache'
-        }
-      ]
+      diagnostics: sessionDiagnostics
     });
     const sendPrompt = vi
       .fn()
@@ -125,7 +126,7 @@ describe('App shell', () => {
           windowBounds: null
         }
       }),
-      listDiagnostics: vi.fn().mockResolvedValue([]),
+      listDiagnostics: vi.fn().mockResolvedValue(sessionDiagnostics),
       openDrawing,
       sendPrompt
     };
@@ -423,5 +424,171 @@ describe('App shell', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Failed to load application settings. Running in a safe fallback state.'
     );
+  });
+
+  it('refreshes diagnostics after a prompt failure returned from the main process', async () => {
+    const listDiagnostics = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          timestamp: '2026-05-03T12:05:00.000Z',
+          source: 'copilot',
+          level: 'error',
+          message: 'Prompt execution failed.',
+          detail: 'Command timed out'
+        }
+      ]);
+
+    window.cadUiApi = {
+      loadSettings: vi.fn(),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+      loadBootstrap: vi.fn().mockResolvedValue({
+        authState: 'ready',
+        models: ['gpt-5.4'],
+        settings: {
+          selectedModel: 'gpt-5.4',
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }
+      }),
+      listDiagnostics,
+      openDrawing: vi.fn().mockResolvedValue({
+        canceled: false,
+        filePath: 'D:/drawings/site.dxf',
+        session: {
+          sourcePath: 'D:/drawings/site.dxf',
+          dxfPath: 'D:/drawings/site.dxf',
+          cachePath: 'D:/drawings/.cadqcache',
+          openedAt: '2026-05-03T12:00:00.000Z'
+        },
+        scene: {
+          drawingPath: 'D:/drawings/site.dxf',
+          bounds: {
+            minX: 0,
+            minY: 0,
+            maxX: 100,
+            maxY: 50
+          },
+          entities: [],
+          handleIndex: {}
+        },
+        error: null,
+        diagnostics: []
+      }),
+      sendPrompt: vi.fn().mockResolvedValue({
+        text: 'Copilot CLI prompt failed.',
+        featureIds: [],
+        entityHandles: [],
+        highlightMode: 'none',
+        evidence: []
+      })
+    };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AI status: ready')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open DWG' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('site.dxf')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask about the drawing' }), {
+      target: { value: 'Summarize the drawing.' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Copilot CLI prompt failed.')).toBeInTheDocument();
+    });
+
+    expect(listDiagnostics).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Prompt execution failed.')).toBeInTheDocument();
+    expect(screen.getByText('Command timed out')).toBeInTheDocument();
+  });
+
+  it('refreshes diagnostics when prompt delivery rejects before the renderer receives a response', async () => {
+    const listDiagnostics = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          timestamp: '2026-05-03T12:06:00.000Z',
+          source: 'copilot',
+          level: 'error',
+          message: 'Prompt execution failed.',
+          detail: 'Transport dropped'
+        }
+      ]);
+
+    window.cadUiApi = {
+      loadSettings: vi.fn(),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+      loadBootstrap: vi.fn().mockResolvedValue({
+        authState: 'ready',
+        models: ['gpt-5.4'],
+        settings: {
+          selectedModel: 'gpt-5.4',
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }
+      }),
+      listDiagnostics,
+      openDrawing: vi.fn().mockResolvedValue({
+        canceled: false,
+        filePath: 'D:/drawings/site.dxf',
+        session: {
+          sourcePath: 'D:/drawings/site.dxf',
+          dxfPath: 'D:/drawings/site.dxf',
+          cachePath: 'D:/drawings/.cadqcache',
+          openedAt: '2026-05-03T12:00:00.000Z'
+        },
+        scene: {
+          drawingPath: 'D:/drawings/site.dxf',
+          bounds: {
+            minX: 0,
+            minY: 0,
+            maxX: 100,
+            maxY: 50
+          },
+          entities: [],
+          handleIndex: {}
+        },
+        error: null,
+        diagnostics: []
+      }),
+      sendPrompt: vi.fn().mockRejectedValue(new Error('Transport dropped'))
+    };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AI status: ready')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open DWG' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('site.dxf')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask about the drawing' }), {
+      target: { value: 'Summarize the drawing.' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Prompt delivery failed before the renderer received a response.')).toBeInTheDocument();
+    });
+
+    expect(listDiagnostics).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Prompt execution failed.')).toBeInTheDocument();
+    expect(screen.getByText('Transport dropped')).toBeInTheDocument();
   });
 });

@@ -35,7 +35,7 @@ npm run test:e2e -- e2e/cad-ui.e2e.ts
 npm run build
 ```
 
-The E2E suite launches the packaged Electron app through Playwright. `npm run test:e2e` performs a fresh build before the test run so the desktop flow is exercised against current sources.
+The E2E suite launches the built Electron app through Playwright. `npm run test:e2e` performs a fresh build before the test run so the desktop flow is exercised against current sources.
 
 ## Project notes
 

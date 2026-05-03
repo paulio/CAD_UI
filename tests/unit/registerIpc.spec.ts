@@ -37,6 +37,9 @@ describe('registerIpc', () => {
   beforeEach(() => {
     handlers.clear();
     vi.clearAllMocks();
+    delete process.env.CAD_UI_E2E;
+    delete process.env.CAD_UI_E2E_AUTH_STATE;
+    delete process.env.CAD_UI_E2E_MODELS;
   });
 
   it('rejects malformed settings payloads with a controlled error', async () => {
@@ -267,6 +270,79 @@ describe('registerIpc', () => {
     });
   });
 
+  it('ignores bootstrap override environment variables outside explicit e2e mode', async () => {
+    process.env.CAD_UI_E2E_AUTH_STATE = 'ready';
+    process.env.CAD_UI_E2E_MODELS = 'override-model';
+
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.listModels.mockResolvedValue(['gpt-5.4-live']);
+    copilotAdapter.probeAuth.mockResolvedValue('reauth-required');
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const loadBootstrap = handlers.get(ipcChannels.loadBootstrap);
+    const bootstrap = await loadBootstrap?.({}, undefined);
+
+    expect(bootstrap).toEqual({
+      authState: 'reauth-required',
+      models: ['gpt-5.4-live'],
+      settings: {
+        selectedModel: null,
+        recentDrawings: [],
+        lastDrawingPath: null,
+        windowBounds: null
+      }
+    });
+  });
+
+  it('honors bootstrap override environment variables in explicit e2e mode', async () => {
+    process.env.CAD_UI_E2E = '1';
+    process.env.CAD_UI_E2E_AUTH_STATE = 'ready';
+    process.env.CAD_UI_E2E_MODELS = 'override-model,override-model-mini';
+
+    const copilotAdapter = createCopilotAdapterStub();
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const loadBootstrap = handlers.get(ipcChannels.loadBootstrap);
+    const bootstrap = await loadBootstrap?.({}, undefined);
+
+    expect(bootstrap).toEqual({
+      authState: 'ready',
+      models: ['override-model', 'override-model-mini'],
+      settings: {
+        selectedModel: null,
+        recentDrawings: [],
+        lastDrawingPath: null,
+        windowBounds: null
+      }
+    });
+    expect(copilotAdapter.listModels).not.toHaveBeenCalled();
+    expect(copilotAdapter.probeAuth).not.toHaveBeenCalled();
+  });
+
   it('returns a controlled prompt error for non-auth CLI failures', async () => {
     const copilotAdapter = createCopilotAdapterStub();
     copilotAdapter.runPrompt.mockRejectedValue({
@@ -300,6 +376,16 @@ describe('registerIpc', () => {
     expect(response).toMatchObject({
       text: 'Copilot CLI prompt failed.'
     });
+
+    const listDiagnostics = handlers.get(ipcChannels.listDiagnostics);
+    expect(listDiagnostics?.({}, undefined)).toMatchObject([
+      {
+        source: 'copilot',
+        level: 'error',
+        message: 'Prompt execution failed.',
+        detail: null
+      }
+    ]);
   });
 
   it('returns structured highlight data when the prompt response includes a JSON envelope', async () => {

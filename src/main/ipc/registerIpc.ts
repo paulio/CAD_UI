@@ -100,7 +100,18 @@ function parseBootstrapAuthOverride(value: string | undefined): AuthState | null
   return null;
 }
 
+function isE2EBootstrapOverrideEnabled(): boolean {
+  return process.env.CAD_UI_E2E === '1';
+}
+
 function readBootstrapOverrides(): { authState: AuthState | null; models: string[] | null } {
+  if (!isE2EBootstrapOverrideEnabled()) {
+    return {
+      authState: null,
+      models: null
+    };
+  }
+
   const authState = parseBootstrapAuthOverride(process.env.CAD_UI_E2E_AUTH_STATE);
   const models = process.env.CAD_UI_E2E_MODELS
     ?.split(',')

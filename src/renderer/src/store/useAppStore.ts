@@ -245,6 +245,7 @@ export function useAppStore(): AppStore {
         selectedEntityIds: state.highlightedEntityIds,
         selectedEntityHandles
       });
+      const diagnostics = await loadDiagnosticsSafely();
 
       const nextHighlight = createHighlightState(state.scene, {
         featureIds: response.featureIds,
@@ -261,12 +262,15 @@ export function useAppStore(): AppStore {
         messages: [...current.messages, assistantEntry],
         ...nextHighlight,
         selectedEntityId: nextHighlight.highlightedEntityIds[0] ?? current.selectedEntityId,
-        diagnostics: current.diagnostics
+        diagnostics
       }));
     } catch {
+      const diagnostics = await loadDiagnosticsSafely();
+
       setState((current) => ({
         ...current,
         isSendingPrompt: false,
+        diagnostics,
         messages: [
           ...current.messages,
           {

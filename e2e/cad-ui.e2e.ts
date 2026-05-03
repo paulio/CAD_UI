@@ -8,6 +8,7 @@ test('persists model selection across restart', async () => {
   const launchEnv = {
     ...process.env,
     APPDATA: appDataPath,
+    CAD_UI_E2E: '1',
     CAD_UI_E2E_MODELS: 'gpt-5.4,gpt-5.4-mini',
     CAD_UI_E2E_AUTH_STATE: 'ready',
     PATH: ''
