@@ -346,6 +346,50 @@ describe('registerIpc', () => {
     });
   });
 
+  it('preserves evidence for feature-only envelopes when top-level entity handles are absent', async () => {
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.runPrompt.mockResolvedValue(`Here is the result:\n\n\
+\`\`\`json
+{"text":"Frontage feature highlighted.","featureIds":["frontage-feature"],"entityHandles":[],"highlightMode":"focus","evidence":[{"featureId":"frontage-feature","handle":"A1","source":"cadq feature"}]}
+\`\`\``);
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const sendPrompt = handlers.get(ipcChannels.sendPrompt);
+    const response = await sendPrompt?.({}, {
+      model: 'gpt-5.4',
+      prompt: 'Highlight the frontage feature.',
+      drawingPath: 'D:/drawings/site.dxf',
+      selectedEntityIds: ['entity-line-1'],
+      selectedEntityHandles: ['A1']
+    });
+
+    expect(response).toEqual({
+      text: 'Frontage feature highlighted.',
+      featureIds: ['frontage-feature'],
+      entityHandles: [],
+      highlightMode: 'focus',
+      evidence: [
+        {
+          featureId: 'frontage-feature',
+          handle: 'A1',
+          source: 'cadq feature'
+        }
+      ]
+    });
+  });
+
   it('does not reuse selected entity ids as semantic feature ids for plain-text prompt replies', async () => {
     const copilotAdapter = createCopilotAdapterStub();
     copilotAdapter.runPrompt.mockResolvedValue('The same geometry remains in focus.');

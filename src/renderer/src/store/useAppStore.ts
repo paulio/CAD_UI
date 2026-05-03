@@ -3,6 +3,7 @@ import type {
   AuthState,
   AppSettings,
   AssistantEnvelope,
+  AssistantEvidence,
   DiagnosticEntry,
   DrawingSession,
   HighlightMode
@@ -16,6 +17,7 @@ export type ChatReplayTarget = {
   featureIds: string[];
   entityHandles: EntityHandle[];
   entityIds: string[];
+  evidence: AssistantEvidence[];
   highlightMode: HighlightMode;
 };
 
@@ -246,7 +248,8 @@ export function useAppStore(): AppStore {
 
       const nextHighlight = createHighlightState(state.scene, {
         featureIds: response.featureIds,
-        entityHandles: collectEnvelopeHandles(response),
+        entityHandles: response.entityHandles,
+        evidence: response.evidence,
         highlightMode: response.highlightMode
       });
       const assistantEntry = createAssistantEntry(response, state.scene);
@@ -285,6 +288,7 @@ export function useAppStore(): AppStore {
       featureIds: target.featureIds,
       entityHandles: target.entityHandles,
       entityIds: target.entityIds,
+      evidence: target.evidence,
       highlightMode: target.highlightMode
     });
 
@@ -368,11 +372,15 @@ function createHighlightState(
     featureIds: string[];
     entityHandles: string[];
     entityIds?: string[];
+    evidence?: AssistantEvidence[];
     highlightMode: HighlightMode;
   }
 ) {
   const highlightedFeatureIds = uniqueStrings(input.featureIds);
-  const highlightedEntityHandles = normalizeEntityHandles(input.entityHandles);
+  const highlightedEntityHandles = normalizeEntityHandles([
+    ...input.entityHandles,
+    ...resolveEvidenceHandles(highlightedFeatureIds, input.evidence ?? [])
+  ]);
   const highlightedEntityIds = uniqueStrings([
     ...(input.entityIds ?? []),
     ...resolveEntityIdsFromHandles(scene, highlightedEntityHandles)
@@ -390,11 +398,8 @@ function buildReplayTargets(scene: ViewerScene | null, response: AssistantEnvelo
   const featureIds = uniqueStrings(response.featureIds);
   const envelopeHandles = collectEnvelopeHandles(response);
   const featureTargets = featureIds.flatMap((featureId) => {
-    const handles = normalizeEntityHandles(
-      response.evidence
-        .filter((record) => record.featureId === featureId)
-        .map((record) => record.handle)
-    );
+    const featureEvidence = response.evidence.filter((record) => record.featureId === featureId);
+    const handles = resolveEvidenceHandles([featureId], featureEvidence);
     const scopedHandles = handles.length > 0 ? handles : featureIds.length === 1 ? envelopeHandles : [];
 
     if (scopedHandles.length === 0) {
@@ -408,6 +413,7 @@ function buildReplayTargets(scene: ViewerScene | null, response: AssistantEnvelo
         featureIds: [featureId],
         entityHandles: scopedHandles,
         entityIds: resolveEntityIdsFromHandles(scene, scopedHandles),
+        evidence: featureEvidence,
         highlightMode: response.highlightMode
       }
     ];
@@ -428,9 +434,20 @@ function buildReplayTargets(scene: ViewerScene | null, response: AssistantEnvelo
       featureIds: [],
       entityHandles: envelopeHandles,
       entityIds: resolveEntityIdsFromHandles(scene, envelopeHandles),
+      evidence: response.evidence,
       highlightMode: response.highlightMode
     }
   ];
+}
+
+function resolveEvidenceHandles(featureIds: string[], evidence: AssistantEvidence[]): EntityHandle[] {
+  if (featureIds.length === 0 || evidence.length === 0) {
+    return [];
+  }
+
+  return normalizeEntityHandles(
+    evidence.filter((record) => featureIds.includes(record.featureId)).map((record) => record.handle)
+  );
 }
 
 function resolveEntityIdsFromHandles(scene: ViewerScene | null, entityHandles: string[]): string[] {

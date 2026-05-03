@@ -299,6 +299,110 @@ describe('App shell', () => {
     expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlighted: entity-line-1');
   });
 
+  it('derives feature replay geometry from evidence when top-level handles are absent', async () => {
+    const openDrawing = vi.fn().mockResolvedValue({
+      canceled: false,
+      filePath: 'D:/drawings/site.dxf',
+      session: {
+        sourcePath: 'D:/drawings/site.dxf',
+        dxfPath: 'D:/drawings/site.dxf',
+        cachePath: 'D:/drawings/.cadqcache',
+        openedAt: '2026-05-03T12:00:00.000Z'
+      },
+      scene: {
+        drawingPath: 'D:/drawings/site.dxf',
+        bounds: {
+          minX: 0,
+          minY: 0,
+          maxX: 100,
+          maxY: 50
+        },
+        entities: [
+          {
+            id: 'entity-line-1',
+            kind: 'line',
+            handle: 'A1',
+            layer: 'SITE',
+            label: null,
+            bounds: {
+              minX: 0,
+              minY: 0,
+              maxX: 100,
+              maxY: 0
+            },
+            x1: 0,
+            y1: 0,
+            x2: 100,
+            y2: 0
+          }
+        ],
+        handleIndex: {
+          A1: 'entity-line-1'
+        }
+      },
+      error: null,
+      diagnostics: []
+    });
+
+    window.cadUiApi = {
+      loadSettings: vi.fn(),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+      loadBootstrap: vi.fn().mockResolvedValue({
+        authState: 'ready',
+        models: ['gpt-5.4'],
+        settings: {
+          selectedModel: 'gpt-5.4',
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }
+      }),
+      listDiagnostics: vi.fn().mockResolvedValue([]),
+      openDrawing,
+      sendPrompt: vi.fn().mockResolvedValue({
+        text: 'The frontage feature is highlighted.',
+        featureIds: ['frontage-feature'],
+        entityHandles: [],
+        highlightMode: 'focus',
+        evidence: [
+          {
+            featureId: 'frontage-feature',
+            handle: 'a1',
+            source: 'cad-ai'
+          }
+        ]
+      })
+    };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AI status: ready')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open DWG' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('site.dxf')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask about the drawing' }), {
+      target: { value: 'Highlight the frontage feature.' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Focus feature frontage-feature' })).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlighted: entity-line-1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus feature frontage-feature' }));
+
+    expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlighted: entity-line-1');
+    expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlight mode: focus');
+  });
+
   it('falls back to an explicit safe state when bootstrap loading fails', async () => {
     window.cadUiApi = {
       loadSettings: vi.fn(),
