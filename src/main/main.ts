@@ -1,8 +1,13 @@
 import { app, BrowserWindow } from 'electron';
+import { join } from 'node:path';
+import { registerIpc } from './ipc/registerIpc';
+import { SettingsStore } from './services/settingsStore';
 import { createMainWindow } from './window/createMainWindow';
 
 async function bootstrap(): Promise<void> {
   await app.whenReady();
+
+  registerIpc(new SettingsStore(join(app.getPath('userData'), 'settings.json')));
   await createMainWindow();
 
   app.on('activate', async () => {
