@@ -5,6 +5,10 @@ export type Point2D = {
   y: number;
 };
 
+export type ViewerPolylineVertex = Point2D & {
+  bulge: number;
+};
+
 export type ViewerBounds = {
   minX: number;
   minY: number;
@@ -31,7 +35,15 @@ export type ViewerLineEntity = ViewerEntityBase & {
 export type ViewerPolylineEntity = ViewerEntityBase & {
   kind: 'polyline';
   points: Point2D[];
+  vertices: ViewerPolylineVertex[];
   closed: boolean;
+};
+
+export type ViewerInsertEntity = ViewerEntityBase & {
+  kind: 'insert';
+  x: number;
+  y: number;
+  name: string | null;
 };
 
 export type ViewerCircleEntity = ViewerEntityBase & {
@@ -65,6 +77,7 @@ export type ViewerUnknownEntity = ViewerEntityBase & {
 export type ViewerEntity =
   | ViewerLineEntity
   | ViewerPolylineEntity
+  | ViewerInsertEntity
   | ViewerCircleEntity
   | ViewerArcEntity
   | ViewerTextEntity

@@ -4,6 +4,7 @@ import DxfParser, {
   type IArcEntity,
   type ICircleEntity,
   type IEntity,
+  type IInsertEntity,
   type ILineEntity,
   type ILwpolylineEntity,
   type IPoint,
@@ -11,7 +12,7 @@ import DxfParser, {
   type ITextEntity
 } from 'dxf-parser';
 import type { EntityHandle } from '../../../shared/contracts';
-import type { Point2D, ViewerBounds, ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
+import type { Point2D, ViewerBounds, ViewerEntity, ViewerPolylineVertex, ViewerScene } from '../../../shared/viewerTypes';
 
 type ParsedDxfDocument = {
   entities: IEntity[];
@@ -53,6 +54,8 @@ function normalizeEntity(entity: IEntity, index: number): ViewerEntity[] {
       return normalizeLwPolylineEntity(entity as ILwpolylineEntity, index);
     case 'POLYLINE':
       return normalizePolylineEntity(entity as IPolylineEntity, index);
+    case 'INSERT':
+      return normalizeInsertEntity(entity as IInsertEntity, index);
     case 'CIRCLE':
       return normalizeCircleEntity(entity as ICircleEntity, index);
     case 'ARC':
@@ -89,7 +92,8 @@ function normalizeLineEntity(entity: ILineEntity, index: number): ViewerEntity[]
 }
 
 function normalizeLwPolylineEntity(entity: ILwpolylineEntity, index: number): ViewerEntity[] {
-  const points = entity.vertices.map(toPoint2D);
+  const vertices = entity.vertices.map(toPolylineVertex);
+  const points = vertices.map(toPoint2D);
 
   if (points.length === 0) {
     return [];
@@ -102,15 +106,17 @@ function normalizeLwPolylineEntity(entity: ILwpolylineEntity, index: number): Vi
       handle: readHandle(entity),
       layer: readLayer(entity),
       label: null,
-      bounds: computeBoundsFromPoints(points),
+      bounds: computePolylineBounds(vertices, Boolean(entity.shape)),
       points,
+      vertices,
       closed: Boolean(entity.shape)
     }
   ];
 }
 
 function normalizePolylineEntity(entity: IPolylineEntity, index: number): ViewerEntity[] {
-  const points = entity.vertices.map(toPoint2D);
+  const vertices = entity.vertices.map(toPolylineVertex);
+  const points = vertices.map(toPoint2D);
 
   if (points.length === 0) {
     return [];
@@ -123,9 +129,37 @@ function normalizePolylineEntity(entity: IPolylineEntity, index: number): Viewer
       handle: readHandle(entity),
       layer: readLayer(entity),
       label: null,
-      bounds: computeBoundsFromPoints(points),
+      bounds: computePolylineBounds(vertices, Boolean(entity.shape)),
       points,
+      vertices,
       closed: Boolean(entity.shape)
+    }
+  ];
+}
+
+function normalizeInsertEntity(entity: IInsertEntity, index: number): ViewerEntity[] {
+  const point = toPoint2D(entity.position);
+
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+    return [];
+  }
+
+  return [
+    {
+      id: createEntityId(entity, index),
+      kind: 'insert',
+      handle: readHandle(entity),
+      layer: readLayer(entity),
+      label: typeof entity.name === 'string' && entity.name.length > 0 ? entity.name : null,
+      bounds: {
+        minX: point.x,
+        minY: point.y,
+        maxX: point.x,
+        maxY: point.y
+      },
+      x: point.x,
+      y: point.y,
+      name: typeof entity.name === 'string' && entity.name.length > 0 ? entity.name : null
     }
   ];
 }
@@ -235,11 +269,30 @@ function computeBoundsFromPoints(points: Point2D[]): ViewerBounds | null {
   const ys = points.map((point) => point.y);
 
   return {
-    minX: Math.min(...xs),
-    minY: Math.min(...ys),
-    maxX: Math.max(...xs),
-    maxY: Math.max(...ys)
+    minX: sanitizeCoordinate(Math.min(...xs)),
+    minY: sanitizeCoordinate(Math.min(...ys)),
+    maxX: sanitizeCoordinate(Math.max(...xs)),
+    maxY: sanitizeCoordinate(Math.max(...ys))
   };
+}
+
+function computePolylineBounds(vertices: ViewerPolylineVertex[], closed: boolean): ViewerBounds | null {
+  const points = vertices.map(toPoint2D);
+  const initialBounds = computeBoundsFromPoints(points);
+
+  if (initialBounds === null || vertices.length < 2) {
+    return initialBounds;
+  }
+
+  const segmentCount = closed ? vertices.length : vertices.length - 1;
+
+  return Array.from({ length: segmentCount }).reduce<ViewerBounds>((bounds, _value, index) => {
+    const start = vertices[index];
+    const end = vertices[(index + 1) % vertices.length];
+    const bulgeBounds = computeBulgeBounds(start, end, start.bulge);
+
+    return bulgeBounds === null ? bounds : mergeBounds(bounds, bulgeBounds);
+  }, initialBounds);
 }
 
 function computeArcBounds(entity: IArcEntity): ViewerBounds {
@@ -258,6 +311,45 @@ function computeArcBounds(entity: IArcEntity): ViewerBounds {
     maxX: entity.center.x,
     maxY: entity.center.y
   };
+}
+
+function computeBulgeBounds(start: ViewerPolylineVertex, end: ViewerPolylineVertex, bulge: number): ViewerBounds | null {
+  if (!Number.isFinite(bulge) || Math.abs(bulge) < 1e-9) {
+    return null;
+  }
+
+  const chordX = end.x - start.x;
+  const chordY = end.y - start.y;
+  const chordLength = Math.hypot(chordX, chordY);
+
+  if (chordLength < 1e-9) {
+    return computeBoundsFromPoints([start, end]);
+  }
+
+  const midpointX = (start.x + end.x) / 2;
+  const midpointY = (start.y + end.y) / 2;
+  const leftNormalX = -chordY / chordLength;
+  const leftNormalY = chordX / chordLength;
+  const offset = (chordLength * (1 - bulge * bulge)) / (4 * bulge);
+  const centerX = midpointX + leftNormalX * offset;
+  const centerY = midpointY + leftNormalY * offset;
+  const radius = Math.hypot(start.x - centerX, start.y - centerY);
+
+  if (!Number.isFinite(radius) || radius < 1e-9) {
+    return computeBoundsFromPoints([start, end]);
+  }
+
+  const startAngle = normalizeRadians(Math.atan2(start.y - centerY, start.x - centerX));
+  const sweepAngle = 4 * Math.atan(bulge);
+  const candidateAngles = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].filter((angle) =>
+    isAngleWithinSweep(angle, startAngle, sweepAngle)
+  );
+  const points = [start, end, ...candidateAngles.map((angle) => ({
+    x: centerX + radius * Math.cos(angle),
+    y: centerY + radius * Math.sin(angle)
+  }))];
+
+  return computeBoundsFromPoints(points);
 }
 
 function isAngleWithinArc(angle: number, startAngle: number, endAngle: number): boolean {
@@ -281,11 +373,45 @@ function toRadians(angle: number): number {
   return (angle * Math.PI) / 180;
 }
 
+function normalizeRadians(angle: number): number {
+  const normalized = angle % (2 * Math.PI);
+  return normalized < 0 ? normalized + 2 * Math.PI : normalized;
+}
+
+function isAngleWithinSweep(angle: number, startAngle: number, sweepAngle: number): boolean {
+  if (sweepAngle >= 0) {
+    return normalizeRadians(angle - startAngle) <= sweepAngle + 1e-9;
+  }
+
+  return normalizeRadians(startAngle - angle) <= Math.abs(sweepAngle) + 1e-9;
+}
+
 function toPoint2D(point: IPoint | { x: number; y: number }): Point2D {
   return {
     x: point.x,
     y: point.y
   };
+}
+
+function toPolylineVertex(point: IPoint | { x: number; y: number; bulge?: number }): ViewerPolylineVertex {
+  return {
+    x: point.x,
+    y: point.y,
+    bulge: typeof point.bulge === 'number' && Number.isFinite(point.bulge) ? point.bulge : 0
+  };
+}
+
+function mergeBounds(left: ViewerBounds, right: ViewerBounds): ViewerBounds {
+  return {
+    minX: sanitizeCoordinate(Math.min(left.minX, right.minX)),
+    minY: sanitizeCoordinate(Math.min(left.minY, right.minY)),
+    maxX: sanitizeCoordinate(Math.max(left.maxX, right.maxX)),
+    maxY: sanitizeCoordinate(Math.max(left.maxY, right.maxY))
+  };
+}
+
+function sanitizeCoordinate(value: number): number {
+  return Math.abs(value) < 1e-9 ? 0 : value;
 }
 
 function createEntityId(entity: IEntity, index: number): string {
