@@ -88,6 +88,58 @@ describe('buildSceneFromDxf', () => {
       await rm(tempDirectory, { force: true, recursive: true });
     }
   });
+
+  it('computes wraparound arc bounds from normalized radian angles', async () => {
+    const tempDirectory = await mkdtemp(join(tmpdir(), 'cad-ui-dxf-'));
+    const dxfPath = join(tempDirectory, 'wraparound-arc.dxf');
+
+    try {
+      await writeFile(dxfPath, createWraparoundArcDxf(), 'utf8');
+
+      const scene = await buildSceneFromDxf(dxfPath);
+      const arc = scene.entities[0];
+
+      expect(arc).toMatchObject({
+        kind: 'arc',
+        handle: '11'
+      });
+      expect(arc?.bounds).toEqual({
+        minX: 0,
+        minY: 0,
+        maxX: 10,
+        maxY: 10
+      });
+    } finally {
+      await rm(tempDirectory, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps unsupported entities in the scene and handle index when fallback points exist', async () => {
+    const tempDirectory = await mkdtemp(join(tmpdir(), 'cad-ui-dxf-'));
+    const dxfPath = join(tempDirectory, 'unsupported-spline.dxf');
+
+    try {
+      await writeFile(dxfPath, createUnsupportedSplineDxf(), 'utf8');
+
+      const scene = await buildSceneFromDxf(dxfPath);
+      const spline = scene.entities[0];
+
+      expect(spline).toMatchObject({
+        kind: 'unknown',
+        handle: '20',
+        label: 'SPLINE',
+        points: [
+          { x: 0, y: 0 },
+          { x: 5, y: 5 },
+          { x: 10, y: 0 }
+        ]
+      });
+      expect(scene.handleIndex['20']).toBe(spline?.id);
+      expect(buildHighlightSet(scene, ['20'])).toEqual([spline?.id]);
+    } finally {
+      await rm(tempDirectory, { force: true, recursive: true });
+    }
+  });
 });
 
 function createBulgePolylineDxf(): string {
@@ -112,6 +164,76 @@ function createBulgePolylineDxf(): string {
     '0',
     '42',
     '1',
+    '10',
+    '10',
+    '20',
+    '0',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function createWraparoundArcDxf(): string {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'ARC',
+    '5',
+    '11',
+    '8',
+    '0',
+    '10',
+    '5',
+    '20',
+    '5',
+    '40',
+    '5',
+    '50',
+    '90',
+    '51',
+    '0',
+    '0',
+    'ENDSEC',
+    '0',
+    'EOF'
+  ].join('\n');
+}
+
+function createUnsupportedSplineDxf(): string {
+  return [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+    '0',
+    'SPLINE',
+    '5',
+    '20',
+    '8',
+    '0',
+    '70',
+    '0',
+    '71',
+    '3',
+    '72',
+    '0',
+    '73',
+    '3',
+    '74',
+    '0',
+    '10',
+    '0',
+    '20',
+    '0',
+    '10',
+    '5',
+    '20',
+    '5',
     '10',
     '10',
     '20',

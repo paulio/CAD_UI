@@ -1,5 +1,5 @@
 import type { HighlightMode } from '../../../shared/contracts';
-import type { ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
+import type { Point2D, ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
 
 type DrawingCanvasProps = {
   scene: ViewerScene | null;
@@ -70,17 +70,18 @@ function renderEntity(
     case 'line':
       return <line key={entity.id} {...commonProps} x1={toSvgX(entity.x1, minX)} y1={toSvgY(entity.y1, maxY)} x2={toSvgX(entity.x2, minX)} y2={toSvgY(entity.y2, maxY)} />;
     case 'polyline':
-      return <polyline key={entity.id} {...commonProps} points={entity.points.map((point) => `${toSvgX(point.x, minX)},${toSvgY(point.y, maxY)}`).join(' ')} fill="none" />;
+      return <polyline key={entity.id} {...commonProps} points={toSvgPointString(entity.points, minX, maxY, entity.closed)} fill="none" />;
     case 'insert':
       return <circle key={entity.id} {...commonProps} cx={toSvgX(entity.x, minX)} cy={toSvgY(entity.y, maxY)} r={4} />;
     case 'circle':
       return <circle key={entity.id} {...commonProps} cx={toSvgX(entity.cx, minX)} cy={toSvgY(entity.cy, maxY)} r={entity.r} fill="none" />;
     case 'arc': {
-      const startX = entity.cx + entity.r * Math.cos(toRadians(entity.startAngle));
-      const startY = entity.cy + entity.r * Math.sin(toRadians(entity.startAngle));
-      const endX = entity.cx + entity.r * Math.cos(toRadians(entity.endAngle));
-      const endY = entity.cy + entity.r * Math.sin(toRadians(entity.endAngle));
-      const largeArcFlag = Math.abs(entity.endAngle - entity.startAngle) > 180 ? 1 : 0;
+      const startX = entity.cx + entity.r * Math.cos(entity.startAngle);
+      const startY = entity.cy + entity.r * Math.sin(entity.startAngle);
+      const endX = entity.cx + entity.r * Math.cos(entity.endAngle);
+      const endY = entity.cy + entity.r * Math.sin(entity.endAngle);
+      const sweepAngle = normalizeRadians(entity.endAngle - entity.startAngle);
+      const largeArcFlag = sweepAngle > Math.PI ? 1 : 0;
 
       return (
         <path
@@ -98,7 +99,11 @@ function renderEntity(
         </text>
       );
     case 'unknown':
-      return <polyline key={entity.id} {...commonProps} points={entity.points.map((point) => `${toSvgX(point.x, minX)},${toSvgY(point.y, maxY)}`).join(' ')} fill="none" />;
+      if (entity.points.length === 1) {
+        return <circle key={entity.id} {...commonProps} cx={toSvgX(entity.points[0].x, minX)} cy={toSvgY(entity.points[0].y, maxY)} r={2} />;
+      }
+
+      return <polyline key={entity.id} {...commonProps} points={toSvgPointString(entity.points, minX, maxY, false)} fill="none" />;
     default:
       return null;
   }
@@ -112,6 +117,13 @@ function toSvgY(value: number, maxY: number): number {
   return maxY - value;
 }
 
-function toRadians(angle: number): number {
-  return (angle * Math.PI) / 180;
+function toSvgPointString(points: Point2D[], minX: number, maxY: number, closed: boolean): string {
+  const renderPoints = closed && points.length > 0 ? [...points, points[0]] : points;
+
+  return renderPoints.map((point) => `${toSvgX(point.x, minX)},${toSvgY(point.y, maxY)}`).join(' ');
+}
+
+function normalizeRadians(angle: number): number {
+  const normalized = angle % (2 * Math.PI);
+  return normalized < 0 ? normalized + 2 * Math.PI : normalized;
 }

@@ -63,7 +63,7 @@ function normalizeEntity(entity: IEntity, index: number): ViewerEntity[] {
     case 'TEXT':
       return normalizeTextEntity(entity as ITextEntity, index);
     default:
-      return [];
+      return normalizeUnknownEntity(entity, index);
   }
 }
 
@@ -94,6 +94,7 @@ function normalizeLineEntity(entity: ILineEntity, index: number): ViewerEntity[]
 function normalizeLwPolylineEntity(entity: ILwpolylineEntity, index: number): ViewerEntity[] {
   const vertices = entity.vertices.map(toPolylineVertex);
   const points = vertices.map(toPoint2D);
+  const closed = readClosedPolylineFlag(entity);
 
   if (points.length === 0) {
     return [];
@@ -106,10 +107,10 @@ function normalizeLwPolylineEntity(entity: ILwpolylineEntity, index: number): Vi
       handle: readHandle(entity),
       layer: readLayer(entity),
       label: null,
-      bounds: computePolylineBounds(vertices, Boolean(entity.shape)),
+      bounds: computePolylineBounds(vertices, closed),
       points,
       vertices,
-      closed: Boolean(entity.shape)
+      closed
     }
   ];
 }
@@ -117,6 +118,7 @@ function normalizeLwPolylineEntity(entity: ILwpolylineEntity, index: number): Vi
 function normalizePolylineEntity(entity: IPolylineEntity, index: number): ViewerEntity[] {
   const vertices = entity.vertices.map(toPolylineVertex);
   const points = vertices.map(toPoint2D);
+  const closed = readClosedPolylineFlag(entity);
 
   if (points.length === 0) {
     return [];
@@ -129,10 +131,10 @@ function normalizePolylineEntity(entity: IPolylineEntity, index: number): Viewer
       handle: readHandle(entity),
       layer: readLayer(entity),
       label: null,
-      bounds: computePolylineBounds(vertices, Boolean(entity.shape)),
+      bounds: computePolylineBounds(vertices, closed),
       points,
       vertices,
-      closed: Boolean(entity.shape)
+      closed
     }
   ];
 }
@@ -219,6 +221,27 @@ function normalizeArcEntity(entity: IArcEntity, index: number): ViewerEntity[] {
   ];
 }
 
+function normalizeUnknownEntity(entity: IEntity, index: number): ViewerEntity[] {
+  const handle = readHandle(entity);
+  const points = extractFallbackPoints(entity);
+
+  if (points.length === 0 && handle === null) {
+    return [];
+  }
+
+  return [
+    {
+      id: createEntityId(entity, index),
+      kind: 'unknown',
+      handle,
+      layer: readLayer(entity),
+      label: typeof entity.type === 'string' && entity.type.length > 0 ? entity.type : 'Unsupported entity',
+      bounds: computeBoundsFromPoints(points),
+      points
+    }
+  ];
+}
+
 function normalizeTextEntity(entity: ITextEntity, index: number): ViewerEntity[] {
   const point = toPoint2D(entity.startPoint);
   const value = entity.text ?? '';
@@ -296,13 +319,15 @@ function computePolylineBounds(vertices: ViewerPolylineVertex[], closed: boolean
 }
 
 function computeArcBounds(entity: IArcEntity): ViewerBounds {
-  const candidateAngles = [entity.startAngle, entity.endAngle, 0, 90, 180, 270]
-    .map(normalizeAngle)
-    .filter((angle, index, values) => values.indexOf(angle) === index)
-    .filter((angle) => angle === normalizeAngle(entity.startAngle) || angle === normalizeAngle(entity.endAngle) || isAngleWithinArc(angle, entity.startAngle, entity.endAngle));
+  const startAngle = normalizeRadians(entity.startAngle);
+  const endAngle = normalizeRadians(entity.endAngle);
+  const sweepAngle = computeCounterClockwiseSweep(startAngle, endAngle);
+  const candidateAngles = [startAngle, endAngle, 0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]
+    .filter((angle, index, values) => values.findIndex((candidate) => areAnglesEqual(candidate, angle)) === index)
+    .filter((angle) => areAnglesEqual(angle, startAngle) || areAnglesEqual(angle, endAngle) || isAngleWithinSweep(angle, startAngle, sweepAngle));
   const points = candidateAngles.map((angle) => ({
-    x: entity.center.x + entity.radius * Math.cos(toRadians(angle)),
-    y: entity.center.y + entity.radius * Math.sin(toRadians(angle))
+    x: entity.center.x + entity.radius * Math.cos(angle),
+    y: entity.center.y + entity.radius * Math.sin(angle)
   }));
 
   return computeBoundsFromPoints(points) ?? {
@@ -352,30 +377,17 @@ function computeBulgeBounds(start: ViewerPolylineVertex, end: ViewerPolylineVert
   return computeBoundsFromPoints(points);
 }
 
-function isAngleWithinArc(angle: number, startAngle: number, endAngle: number): boolean {
-  const normalizedAngle = normalizeAngle(angle);
-  const normalizedStart = normalizeAngle(startAngle);
-  const normalizedEnd = normalizeAngle(endAngle);
-
-  if (normalizedStart <= normalizedEnd) {
-    return normalizedAngle >= normalizedStart && normalizedAngle <= normalizedEnd;
-  }
-
-  return normalizedAngle >= normalizedStart || normalizedAngle <= normalizedEnd;
-}
-
-function normalizeAngle(angle: number): number {
-  const normalized = angle % 360;
-  return normalized < 0 ? normalized + 360 : normalized;
-}
-
-function toRadians(angle: number): number {
-  return (angle * Math.PI) / 180;
+function computeCounterClockwiseSweep(startAngle: number, endAngle: number): number {
+  return normalizeRadians(endAngle - startAngle);
 }
 
 function normalizeRadians(angle: number): number {
   const normalized = angle % (2 * Math.PI);
   return normalized < 0 ? normalized + 2 * Math.PI : normalized;
+}
+
+function areAnglesEqual(left: number, right: number): boolean {
+  return Math.abs(normalizeRadians(left - right)) < 1e-9;
 }
 
 function isAngleWithinSweep(angle: number, startAngle: number, sweepAngle: number): boolean {
@@ -412,6 +424,65 @@ function mergeBounds(left: ViewerBounds, right: ViewerBounds): ViewerBounds {
 
 function sanitizeCoordinate(value: number): number {
   return Math.abs(value) < 1e-9 ? 0 : value;
+}
+
+function extractFallbackPoints(entity: IEntity): Point2D[] {
+  const pointCollections = ['vertices', 'controlPoints', 'fitPoints']
+    .flatMap((key) => readPointArray((entity as Record<string, unknown>)[key]));
+  const singlePoints = ['position', 'center', 'startPoint', 'endPoint', 'anchorPoint', 'middleOfText', 'insertionPoint']
+    .flatMap((key) => {
+      const point = readPoint((entity as Record<string, unknown>)[key]);
+      return point === null ? [] : [point];
+    });
+
+  return dedupePoints([...pointCollections, ...singlePoints]);
+}
+
+function readPointArray(value: unknown): Point2D[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    const point = readPoint(entry);
+    return point === null ? [] : [point];
+  });
+}
+
+function readPoint(value: unknown): Point2D | null {
+  if (value === null || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as { x?: unknown; y?: unknown };
+
+  if (!Number.isFinite(candidate.x) || !Number.isFinite(candidate.y)) {
+    return null;
+  }
+
+  return {
+    x: sanitizeCoordinate(candidate.x),
+    y: sanitizeCoordinate(candidate.y)
+  };
+}
+
+function dedupePoints(points: Point2D[]): Point2D[] {
+  const seen = new Set<string>();
+
+  return points.filter((point) => {
+    const key = `${point.x}:${point.y}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function readClosedPolylineFlag(entity: { closed?: unknown; shape?: unknown }): boolean {
+  return entity.closed === true || entity.shape === true;
 }
 
 function createEntityId(entity: IEntity, index: number): string {
