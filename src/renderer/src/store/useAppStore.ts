@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import type {
+  AuthState,
   AppSettings,
   AssistantEnvelope,
-  BootstrapData,
   DiagnosticEntry,
   DrawingSession,
   HighlightMode
 } from '../../../shared/contracts';
-import type { ViewerEntity, ViewerHighlight, ViewerScene } from '../../../shared/viewerTypes';
+import type { EntityHandle } from '../../../shared/contracts';
+import type { ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
 
-export type ChatTranscriptEntry = {
+export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
@@ -19,16 +20,20 @@ export type ChatTranscriptEntry = {
 };
 
 export type AppStoreState = {
-  bootstrap: BootstrapData | null;
+  authState: AuthState | 'unavailable';
+  models: string[];
+  selectedModel: string | null;
+  drawingSession: DrawingSession | null;
+  scene: ViewerScene | null;
+  highlightedEntityIds: string[];
+  messages: ChatMessage[];
+  settings: AppSettings;
+  bootstrapLoaded: boolean;
   bootstrapFailed: boolean;
   diagnostics: DiagnosticEntry[];
-  session: DrawingSession | null;
-  scene: ViewerScene | null;
   openDrawingError: string | null;
-  highlight: ViewerHighlight;
   selectedEntityId: string | null;
   prompt: string;
-  transcript: ChatTranscriptEntry[];
   isOpeningDrawing: boolean;
   isSendingPrompt: boolean;
 };
@@ -54,20 +59,20 @@ const defaultSettings: AppSettings = {
 };
 
 const initialState: AppStoreState = {
-  bootstrap: null,
+  authState: 'unavailable',
+  models: [],
+  selectedModel: null,
+  drawingSession: null,
+  scene: null,
+  highlightedEntityIds: [],
+  messages: [],
+  settings: defaultSettings,
+  bootstrapLoaded: false,
   bootstrapFailed: false,
   diagnostics: [],
-  session: null,
-  scene: null,
   openDrawingError: null,
-  highlight: {
-    featureIds: [],
-    entityHandles: [],
-    mode: 'none'
-  },
   selectedEntityId: null,
   prompt: '',
-  transcript: [],
   isOpeningDrawing: false,
   isSendingPrompt: false
 };
@@ -86,7 +91,11 @@ export function useAppStore(): AppStore {
 
       setState((current) => ({
         ...current,
-        bootstrap,
+        authState: bootstrap.authState,
+        models: bootstrap.models,
+        selectedModel: bootstrap.settings.selectedModel,
+        settings: bootstrap.settings,
+        bootstrapLoaded: true,
         bootstrapFailed: false,
         diagnostics,
         openDrawingError: null
@@ -94,7 +103,11 @@ export function useAppStore(): AppStore {
     } catch {
       setState((current) => ({
         ...current,
-        bootstrap: null,
+        authState: 'unavailable',
+        models: [],
+        selectedModel: null,
+        settings: defaultSettings,
+        bootstrapLoaded: true,
         bootstrapFailed: true,
         diagnostics: []
       }));
@@ -110,19 +123,14 @@ export function useAppStore(): AppStore {
 
   async function selectModel(model: string): Promise<void> {
     const nextSettings = {
-      ...(state.bootstrap?.settings ?? defaultSettings),
+      ...state.settings,
       selectedModel: model
     };
 
     setState((current) => ({
       ...current,
-      bootstrap:
-        current.bootstrap === null
-          ? current.bootstrap
-          : {
-              ...current.bootstrap,
-              settings: nextSettings
-            }
+      settings: nextSettings,
+      selectedModel: model
     }));
 
     if (typeof window === 'undefined' || typeof window.cadUiApi?.saveSettings !== 'function') {
@@ -164,15 +172,11 @@ export function useAppStore(): AppStore {
       setState((current) => ({
         ...current,
         isOpeningDrawing: false,
-        session: result.session,
+        drawingSession: result.session,
         scene: result.scene ?? null,
         diagnostics: result.diagnostics,
         openDrawingError: result.error,
-        highlight: {
-          featureIds: [],
-          entityHandles: [],
-          mode: 'none'
-        },
+        highlightedEntityIds: [],
         selectedEntityId: null
       }));
     } catch {
@@ -205,30 +209,27 @@ export function useAppStore(): AppStore {
     setState((current) => ({
       ...current,
       isSendingPrompt: true,
-      transcript: userEntry === null ? current.transcript : [...current.transcript, userEntry]
+      messages: userEntry === null ? current.messages : [...current.messages, userEntry]
     }));
 
     try {
+      const selectedEntityHandles = resolveEntityHandles(state.scene, state.highlightedEntityIds);
       const response = await window.cadUiApi.sendPrompt({
-        model: state.bootstrap?.settings.selectedModel ?? null,
+        model: state.selectedModel,
         prompt,
-        drawingPath: state.session?.sourcePath ?? null,
-        selectedEntityIds: state.selectedEntityId === null ? [] : [state.selectedEntityId]
+        drawingPath: state.drawingSession?.sourcePath ?? null,
+        selectedEntityIds: state.highlightedEntityIds,
+        selectedEntityHandles
       });
 
-      const nextHighlight = {
-        featureIds: response.featureIds,
-        entityHandles: response.entityHandles,
-        mode: response.highlightMode
-      } satisfies ViewerHighlight;
       const highlightedEntityIds = resolveHighlightedEntityIds(state.scene, response);
 
       setState((current) => ({
         ...current,
         isSendingPrompt: false,
         prompt: '',
-        transcript: [...current.transcript, createAssistantEntry(response)],
-        highlight: nextHighlight,
+        messages: [...current.messages, createAssistantEntry(response)],
+        highlightedEntityIds,
         selectedEntityId: highlightedEntityIds[0] ?? current.selectedEntityId,
         diagnostics: current.diagnostics
       }));
@@ -236,8 +237,8 @@ export function useAppStore(): AppStore {
       setState((current) => ({
         ...current,
         isSendingPrompt: false,
-        transcript: [
-          ...current.transcript,
+        messages: [
+          ...current.messages,
           {
             id: createEntryId('assistant'),
             role: 'assistant',
@@ -256,11 +257,7 @@ export function useAppStore(): AppStore {
 
     setState((current) => ({
       ...current,
-      highlight: {
-        featureIds,
-        entityHandles,
-        mode
-      },
+      highlightedEntityIds,
       selectedEntityId: highlightedEntityIds[0] ?? current.selectedEntityId
     }));
   }
@@ -271,11 +268,7 @@ export function useAppStore(): AppStore {
     setState((current) => ({
       ...current,
       selectedEntityId: entityId,
-      highlight: {
-        featureIds: [entityId],
-        entityHandles: entity?.handle === null || entity?.handle === undefined ? [] : [entity.handle],
-        mode: 'outline'
-      }
+      highlightedEntityIds: entity === null ? [entityId] : resolveEntityIds(current.scene, [entityId], entity.handle === null ? [] : [entity.handle])
     }));
   }
 
@@ -305,7 +298,7 @@ async function loadDiagnosticsSafely(): Promise<DiagnosticEntry[]> {
   }
 }
 
-function createAssistantEntry(response: AssistantEnvelope): ChatTranscriptEntry {
+function createAssistantEntry(response: AssistantEnvelope): ChatMessage {
   return {
     id: createEntryId('assistant'),
     role: 'assistant',
@@ -348,4 +341,22 @@ function findEntityById(scene: ViewerScene | null, entityId: string): ViewerEnti
   }
 
   return scene.entities.find((entity) => entity.id === entityId) ?? null;
+}
+
+function resolveEntityHandles(scene: ViewerScene | null, entityIds: string[]): EntityHandle[] {
+  if (scene === null) {
+    return [];
+  }
+
+  const handles: EntityHandle[] = [];
+
+  for (const entityId of entityIds) {
+    const entity = findEntityById(scene, entityId);
+
+    if (entity?.handle !== null && entity?.handle !== undefined && !handles.includes(entity.handle)) {
+      handles.push(entity.handle);
+    }
+  }
+
+  return handles;
 }

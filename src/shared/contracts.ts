@@ -71,6 +71,7 @@ export type SendPromptRequest = {
   prompt: string;
   drawingPath: string | null;
   selectedEntityIds: string[];
+  selectedEntityHandles?: EntityHandle[];
 };
 
 export interface CadUiApi {

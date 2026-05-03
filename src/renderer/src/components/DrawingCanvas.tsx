@@ -1,15 +1,13 @@
-import type { ViewerEntity, ViewerHighlight, ViewerScene } from '../../../shared/viewerTypes';
+import type { ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
 
 type DrawingCanvasProps = {
   scene: ViewerScene | null;
-  highlight: ViewerHighlight;
+  highlightedEntityIds: string[];
   selectedEntityId: string | null;
   onSelectEntity: (entityId: string) => void;
 };
 
 export function DrawingCanvas(props: DrawingCanvasProps) {
-  const highlightedEntityIds = resolveHighlightedEntityIds(props.scene, props.highlight);
-
   if (props.scene === null || props.scene.bounds === null) {
     return (
       <section className="panel drawing-canvas" aria-label="Drawing canvas">
@@ -25,7 +23,7 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
   const { bounds } = props.scene;
   const width = Math.max(bounds.maxX - bounds.minX, 1);
   const height = Math.max(bounds.maxY - bounds.minY, 1);
-  const highlightedLabel = highlightedEntityIds[0] ?? 'none';
+  const highlightedLabel = props.highlightedEntityIds[0] ?? 'none';
 
   return (
     <section className="panel drawing-canvas" aria-label="Drawing canvas">
@@ -36,7 +34,7 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Drawing canvas surface">
         <rect x="0" y="0" width={width} height={height} className="drawing-canvas__frame" />
         {props.scene.entities.map((entity) => {
-          const isHighlighted = highlightedEntityIds.includes(entity.id);
+          const isHighlighted = props.highlightedEntityIds.includes(entity.id);
           const isSelected = props.selectedEntityId === entity.id;
 
           return renderEntity(entity, bounds.minX, bounds.maxY, isHighlighted, isSelected, props.onSelectEntity);
@@ -44,24 +42,6 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
       </svg>
     </section>
   );
-}
-
-function resolveHighlightedEntityIds(scene: ViewerScene | null, highlight: ViewerHighlight): string[] {
-  if (scene === null) {
-    return [];
-  }
-
-  const entityIds = [...highlight.featureIds];
-
-  for (const handle of highlight.entityHandles) {
-    const entityId = scene.handleIndex[handle];
-
-    if (typeof entityId === 'string' && !entityIds.includes(entityId)) {
-      entityIds.push(entityId);
-    }
-  }
-
-  return entityIds;
 }
 
 function renderEntity(

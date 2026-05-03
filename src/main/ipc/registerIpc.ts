@@ -77,7 +77,8 @@ function parseSendPromptRequest(payload: unknown): SendPromptRequest {
     (request.model !== null && typeof request.model !== 'string') ||
     typeof request.prompt !== 'string' ||
     (request.drawingPath !== null && typeof request.drawingPath !== 'string') ||
-    !isStringArray(request.selectedEntityIds)
+    !isStringArray(request.selectedEntityIds) ||
+    (request.selectedEntityHandles !== undefined && !isStringArray(request.selectedEntityHandles))
   ) {
     throw new Error('Invalid prompt request payload.');
   }
@@ -86,7 +87,8 @@ function parseSendPromptRequest(payload: unknown): SendPromptRequest {
     model: request.model,
     prompt: request.prompt,
     drawingPath: request.drawingPath,
-    selectedEntityIds: request.selectedEntityIds
+    selectedEntityIds: request.selectedEntityIds,
+    selectedEntityHandles: request.selectedEntityHandles
   };
 }
 
@@ -196,13 +198,7 @@ export function registerIpc(
     const request = parseSendPromptRequest(_payload);
     const prompt = request.prompt.trim();
 
-    return {
-      text: await resolvePromptText(copilotAdapter, request, prompt),
-      featureIds: [],
-      entityHandles: [],
-      highlightMode: 'none',
-      evidence: []
-    };
+    return await resolvePromptEnvelope(copilotAdapter, request, prompt);
   });
 }
 
@@ -214,24 +210,163 @@ function describeOpenDrawingFailure(error: unknown): string {
   return 'Failed to open drawing.';
 }
 
-async function resolvePromptText(
+async function resolvePromptEnvelope(
   copilotAdapter: CopilotAdapterLike,
   request: SendPromptRequest,
   prompt: string
-): Promise<string> {
+): Promise<AssistantEnvelope> {
   if (prompt.length === 0) {
-    return 'Enter a prompt to begin.';
+    return createAssistantEnvelope('Enter a prompt to begin.');
   }
 
   if (request.model === null) {
-    return 'Select a Copilot model before sending a prompt.';
+    return createAssistantEnvelope('Select a Copilot model before sending a prompt.');
   }
 
   try {
-    return await copilotAdapter.runPrompt(request.model, prompt);
+    const responseText = await copilotAdapter.runPrompt(request.model, buildPromptRequest(prompt, request));
+    return parseAssistantEnvelope(responseText, request);
   } catch (error) {
-    return describePromptFailure(error);
+    return createAssistantEnvelope(describePromptFailure(error));
   }
+}
+
+function buildPromptRequest(prompt: string, request: SendPromptRequest): string {
+  const selectedEntityIds = request.selectedEntityIds.length > 0 ? request.selectedEntityIds.join(', ') : 'none';
+  const selectedEntityHandles = request.selectedEntityHandles?.length ? request.selectedEntityHandles.join(', ') : 'none';
+
+  return [
+    prompt,
+    '',
+    'Return either a normal text answer or JSON with this schema:',
+    '{"text":"string","featureIds":["entity-id"],"entityHandles":["handle"],"highlightMode":"focus|pulse|outline|zoomTo|none","evidence":[{"featureId":"entity-id","handle":"handle","source":"string"}]}',
+    `Current selected entity ids: ${selectedEntityIds}`,
+    `Current selected entity handles: ${selectedEntityHandles}`,
+    'When you reference geometry, include the matching featureIds and entityHandles.'
+  ].join('\n');
+}
+
+function parseAssistantEnvelope(responseText: string, request: SendPromptRequest): AssistantEnvelope {
+  const parsed = tryParseAssistantEnvelope(responseText);
+
+  if (parsed !== null) {
+    return parsed;
+  }
+
+  return createAssistantEnvelope(responseText, {
+    featureIds: request.selectedEntityIds,
+    entityHandles: request.selectedEntityHandles ?? [],
+    highlightMode:
+      request.selectedEntityIds.length > 0 || (request.selectedEntityHandles?.length ?? 0) > 0 ? 'focus' : 'none',
+    evidence: buildFallbackEvidence(request)
+  });
+}
+
+function tryParseAssistantEnvelope(responseText: string): AssistantEnvelope | null {
+  const candidates = [responseText, extractJsonCodeBlock(responseText), extractJsonObject(responseText)].filter(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0
+  );
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      const text = typeof parsed.text === 'string' ? parsed.text : responseText;
+      const featureIds = isStringArray(parsed.featureIds) ? parsed.featureIds : [];
+      const entityHandles = isStringArray(parsed.entityHandles) ? parsed.entityHandles : [];
+      const highlightMode = isHighlightMode(parsed.highlightMode) ? parsed.highlightMode : 'none';
+      const evidence = parseEvidence(parsed.evidence);
+
+      return createAssistantEnvelope(text, {
+        featureIds,
+        entityHandles,
+        highlightMode,
+        evidence
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function extractJsonCodeBlock(value: string): string | null {
+  const match = value.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return match?.[1]?.trim() ?? null;
+}
+
+function extractJsonObject(value: string): string | null {
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+
+  return value.slice(start, end + 1).trim();
+}
+
+function parseEvidence(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (typeof entry !== 'object' || entry === null) {
+      return [];
+    }
+
+    const record = entry as Record<string, unknown>;
+
+    if (typeof record.featureId !== 'string' || typeof record.handle !== 'string' || typeof record.source !== 'string') {
+      return [];
+    }
+
+    return [
+      {
+        featureId: record.featureId,
+        handle: record.handle,
+        source: record.source
+      }
+    ];
+  });
+}
+
+function isHighlightMode(value: unknown): value is AssistantEnvelope['highlightMode'] {
+  return value === 'focus' || value === 'pulse' || value === 'outline' || value === 'zoomTo' || value === 'none';
+}
+
+function createAssistantEnvelope(
+  text: string,
+  overrides: Partial<AssistantEnvelope> = {}
+): AssistantEnvelope {
+  return {
+    text,
+    featureIds: overrides.featureIds ?? [],
+    entityHandles: overrides.entityHandles ?? [],
+    highlightMode: overrides.highlightMode ?? 'none',
+    evidence: overrides.evidence ?? []
+  };
+}
+
+function buildFallbackEvidence(request: SendPromptRequest) {
+  const handles = request.selectedEntityHandles ?? [];
+
+  return request.selectedEntityIds.flatMap((featureId, index) => {
+    const handle = handles[index];
+
+    if (typeof handle !== 'string') {
+      return [];
+    }
+
+    return [
+      {
+        featureId,
+        handle,
+        source: 'renderer-selection'
+      }
+    ];
+  });
 }
 
 function describePromptFailure(error: unknown): string {

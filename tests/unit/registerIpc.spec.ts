@@ -132,7 +132,8 @@ describe('registerIpc', () => {
         model: null,
         prompt: '   ',
         drawingPath: null,
-        selectedEntityIds: []
+        selectedEntityIds: [],
+        selectedEntityHandles: []
       }
     );
 
@@ -292,11 +293,56 @@ describe('registerIpc', () => {
       model: 'gpt-5.4',
       prompt: 'Summarize the drawing.',
       drawingPath: null,
-      selectedEntityIds: []
+      selectedEntityIds: [],
+      selectedEntityHandles: []
     });
 
     expect(response).toMatchObject({
       text: 'Copilot CLI prompt failed.'
+    });
+  });
+
+  it('returns structured highlight data when the prompt response includes a JSON envelope', async () => {
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.runPrompt.mockResolvedValue(`Here is the result:\n\n\
+\`\`\`json
+{"text":"Driveway boundary highlighted.","featureIds":["driveway-1"],"entityHandles":["3D"],"highlightMode":"outline","evidence":[{"featureId":"driveway-1","handle":"3D","source":"cadq feature"}]}
+\`\`\``);
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const sendPrompt = handlers.get(ipcChannels.sendPrompt);
+    const response = await sendPrompt?.({}, {
+      model: 'gpt-5.4',
+      prompt: 'Highlight the driveway boundary.',
+      drawingPath: 'D:/drawings/site.dxf',
+      selectedEntityIds: ['entity-line-1'],
+      selectedEntityHandles: ['A1']
+    });
+
+    expect(response).toEqual({
+      text: 'Driveway boundary highlighted.',
+      featureIds: ['driveway-1'],
+      entityHandles: ['3D'],
+      highlightMode: 'outline',
+      evidence: [
+        {
+          featureId: 'driveway-1',
+          handle: '3D',
+          source: 'cadq feature'
+        }
+      ]
     });
   });
 

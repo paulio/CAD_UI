@@ -15,19 +15,17 @@ export function App() {
   }, []);
 
   const selectedEntity = state.scene?.entities.find((entity) => entity.id === state.selectedEntityId) ?? null;
-  const authState = state.bootstrapFailed ? 'bootstrap error' : state.bootstrap?.authState ?? 'unavailable';
-  const selectedModelLabel = state.bootstrapFailed
-    ? 'Unavailable'
-    : state.bootstrap?.settings.selectedModel ?? 'Not selected';
-  const openDisabled = state.bootstrap === null || state.bootstrapFailed || state.isOpeningDrawing;
+  const authState = state.bootstrapFailed ? 'bootstrap error' : state.authState;
+  const selectedModelLabel = state.bootstrapFailed ? 'Unavailable' : state.selectedModel ?? 'Not selected';
+  const openDisabled = !state.bootstrapLoaded || state.bootstrapFailed || state.isOpeningDrawing;
 
   return (
     <main className="app-shell">
       <TopBar
         authState={authState}
-        drawingPath={state.session?.sourcePath ?? null}
-        models={state.bootstrap?.models ?? []}
-        selectedModel={state.bootstrap?.settings.selectedModel ?? null}
+        drawingPath={state.drawingSession?.sourcePath ?? null}
+        models={state.models}
+        selectedModel={state.selectedModel}
         openDisabled={openDisabled}
         isOpeningDrawing={state.isOpeningDrawing}
         onOpenDrawing={() => {
@@ -45,9 +43,9 @@ export function App() {
       </section>
       <section className="app-layout">
         <ChatPanel
-          transcript={state.transcript}
+          messages={state.messages}
           prompt={state.prompt}
-          disabled={state.bootstrapFailed || state.session === null}
+          disabled={state.bootstrapFailed || state.drawingSession === null}
           sending={state.isSendingPrompt}
           onPromptChange={actions.updatePrompt}
           onSendPrompt={() => {
@@ -58,7 +56,7 @@ export function App() {
         <div className="center-column">
           <DrawingCanvas
             scene={state.scene}
-            highlight={state.highlight}
+            highlightedEntityIds={state.highlightedEntityIds}
             selectedEntityId={state.selectedEntityId}
             onSelectEntity={actions.selectEntity}
           />

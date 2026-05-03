@@ -78,19 +78,39 @@ describe('App shell', () => {
         }
       ]
     });
-    const sendPrompt = vi.fn().mockResolvedValue({
-      text: 'The highlighted tree is adjacent to the frontage line.',
-      featureIds: ['entity-tree-1'],
-      entityHandles: ['B0'],
-      highlightMode: 'focus',
-      evidence: [
-        {
-          featureId: 'entity-tree-1',
-          handle: 'B0',
-          source: 'cad-ai'
-        }
-      ]
-    });
+    const sendPrompt = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: 'The highlighted tree is adjacent to the frontage line.',
+        featureIds: ['entity-tree-1'],
+        entityHandles: ['A1'],
+        highlightMode: 'focus',
+        evidence: [
+          {
+            featureId: 'entity-tree-1',
+            handle: 'A1',
+            source: 'cad-ai'
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        text: 'Both highlighted entities remain in focus.',
+        featureIds: ['entity-tree-1', 'entity-line-1'],
+        entityHandles: ['B0', 'A1'],
+        highlightMode: 'focus',
+        evidence: [
+          {
+            featureId: 'entity-tree-1',
+            handle: 'B0',
+            source: 'cad-ai'
+          },
+          {
+            featureId: 'entity-line-1',
+            handle: 'A1',
+            source: 'cad-ai'
+          }
+        ]
+      });
 
     window.cadUiApi = {
       loadSettings: vi.fn(),
@@ -138,7 +158,8 @@ describe('App shell', () => {
         model: 'gpt-5.4',
         prompt: 'What is next to the frontage line?',
         drawingPath: 'D:/drawings/site.dxf',
-        selectedEntityIds: []
+        selectedEntityIds: [],
+        selectedEntityHandles: []
       });
     });
 
@@ -149,6 +170,21 @@ describe('App shell', () => {
     expect(screen.getByText('Selected entity')).toBeInTheDocument();
     expect(screen.getByText('entity-tree-1')).toBeInTheDocument();
     expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlighted: entity-tree-1');
+
+    fireEvent.change(promptInput, { target: { value: 'Keep the same geometry in focus.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }));
+
+    await waitFor(() => {
+      expect(sendPrompt).toHaveBeenNthCalledWith(2, {
+        model: 'gpt-5.4',
+        prompt: 'Keep the same geometry in focus.',
+        drawingPath: 'D:/drawings/site.dxf',
+        selectedEntityIds: ['entity-tree-1', 'entity-line-1'],
+        selectedEntityHandles: ['B0', 'A1']
+      });
+    });
+
+    expect(screen.getByText('Both highlighted entities remain in focus.')).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Copilot model' }), { target: { value: 'gpt-5.4-mini' } });
 

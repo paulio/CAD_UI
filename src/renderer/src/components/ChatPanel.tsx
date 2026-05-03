@@ -1,8 +1,8 @@
 import type { HighlightMode } from '../../../shared/contracts';
-import type { ChatTranscriptEntry } from '../store/useAppStore';
+import type { ChatMessage } from '../store/useAppStore';
 
 type ChatPanelProps = {
-  transcript: ChatTranscriptEntry[];
+  messages: ChatMessage[];
   prompt: string;
   disabled: boolean;
   sending: boolean;
@@ -19,8 +19,8 @@ export function ChatPanel(props: ChatPanelProps) {
         <p>Ask about the active drawing and reapply returned geometry highlights.</p>
       </div>
       <div className="chat-panel__transcript" aria-live="polite">
-        {props.transcript.length === 0 ? <p className="empty-state">No prompts yet. Open a drawing to begin.</p> : null}
-        {props.transcript.map((entry) => (
+        {props.messages.length === 0 ? <p className="empty-state">No prompts yet. Open a drawing to begin.</p> : null}
+        {props.messages.map((entry) => (
           <article key={entry.id} className={`chat-entry chat-entry--${entry.role}`}>
             <header>
               <strong>{entry.role === 'user' ? 'You' : 'Copilot'}</strong>
