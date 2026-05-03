@@ -3,6 +3,7 @@ import type {
   AppSettings,
   AssistantEnvelope,
   BootstrapData,
+  WindowBounds,
   SendPromptRequest
 } from '../../shared/contracts';
 import { ipcChannels } from '../../shared/contracts';
@@ -18,6 +19,40 @@ function registerHandler<TReturn>(
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isWindowBounds(value: unknown): value is WindowBounds {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const bounds = value as Record<string, unknown>;
+
+  return typeof bounds.width === 'number' && typeof bounds.height === 'number';
+}
+
+function parseAppSettings(payload: unknown): AppSettings {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('Invalid app settings payload.');
+  }
+
+  const settings = payload as Record<string, unknown>;
+
+  if (
+    (settings.selectedModel !== null && typeof settings.selectedModel !== 'string') ||
+    !isStringArray(settings.recentDrawings) ||
+    (settings.lastDrawingPath !== null && typeof settings.lastDrawingPath !== 'string') ||
+    (settings.windowBounds !== null && !isWindowBounds(settings.windowBounds))
+  ) {
+    throw new Error('Invalid app settings payload.');
+  }
+
+  return {
+    selectedModel: settings.selectedModel,
+    recentDrawings: settings.recentDrawings,
+    lastDrawingPath: settings.lastDrawingPath,
+    windowBounds: settings.windowBounds
+  };
 }
 
 function parseSendPromptRequest(payload: unknown): SendPromptRequest {
@@ -48,7 +83,7 @@ export function registerIpc(settingsStore: SettingsStore): void {
   registerHandler<AppSettings>(ipcChannels.loadSettings, () => settingsStore.load());
 
   registerHandler<void>(ipcChannels.saveSettings, async (payload) => {
-    await settingsStore.save(payload as AppSettings);
+    await settingsStore.save(parseAppSettings(payload));
   });
 
   registerHandler<BootstrapData>(ipcChannels.loadBootstrap, async () => ({
