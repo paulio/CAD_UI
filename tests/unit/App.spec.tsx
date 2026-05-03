@@ -36,4 +36,32 @@ describe('App shell', () => {
       'Failed to load application settings. Running in a safe fallback state.'
     );
   });
+
+  it('renders recovered default settings when bootstrap succeeds after settings recovery', async () => {
+    window.cadUiApi = {
+      loadSettings: vi.fn(),
+      saveSettings: vi.fn(),
+      loadBootstrap: vi.fn().mockResolvedValue({
+        authState: 'checking',
+        models: [],
+        settings: {
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }
+      }),
+      openDrawing: vi.fn(),
+      sendPrompt: vi.fn()
+    };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AI status: checking')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Selected model: Not selected')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

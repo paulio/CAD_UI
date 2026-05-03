@@ -47,9 +47,8 @@ export class SettingsStore {
       try {
         return normalizeSettings(JSON.parse(raw));
       } catch (error) {
-        throw new Error(`Settings file contains invalid JSON: ${this.filePath}`, {
-          cause: error
-        });
+        await this.quarantineCorruptedFile(raw);
+        return defaultSettings();
       }
     } catch (error) {
       if (isNodeError(error) && error.code === 'ENOENT') {
@@ -74,6 +73,19 @@ export class SettingsStore {
     } catch (error) {
       await fs.rm(tempPath, { force: true }).catch(() => undefined);
       throw error;
+    }
+  }
+
+  private async quarantineCorruptedFile(raw: string): Promise<void> {
+    const quarantinePath = join(
+      dirname(this.filePath),
+      `.${basename(this.filePath)}.corrupt.${process.pid}.${Date.now()}`
+    );
+
+    try {
+      await fs.rename(this.filePath, quarantinePath);
+    } catch {
+      await fs.writeFile(quarantinePath, raw, 'utf8').catch(() => undefined);
     }
   }
 }

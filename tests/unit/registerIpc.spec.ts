@@ -1,4 +1,7 @@
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { SettingsStore } from '../../src/main/services/settingsStore';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
 
@@ -20,6 +23,8 @@ import { registerIpc } from '../../src/main/ipc/registerIpc';
 import { ipcChannels } from '../../src/shared/contracts';
 
 describe('registerIpc', () => {
+  const corruptedSettingsFilePath = 'tests/.tmp/register-ipc-settings.json';
+
   it('rejects malformed settings payloads with a controlled error', async () => {
     const save = vi.fn();
 
@@ -120,5 +125,34 @@ describe('registerIpc', () => {
     expect(response).toMatchObject({
       text: 'Enter a prompt to begin.'
     });
+  });
+
+  it('returns default settings from bootstrap when the settings file is corrupted', async () => {
+    await rm(dirname(corruptedSettingsFilePath), { force: true, recursive: true });
+    await mkdir(dirname(corruptedSettingsFilePath), { recursive: true });
+    await writeFile(corruptedSettingsFilePath, '{invalid json', 'utf8');
+
+    registerIpc(new SettingsStore(corruptedSettingsFilePath));
+
+    const loadBootstrap = handlers.get(ipcChannels.loadBootstrap);
+    const bootstrap = await loadBootstrap?.({}, undefined);
+    const files = await readdir(dirname(corruptedSettingsFilePath));
+    const quarantinedFile = files.find((file) => file.startsWith('.register-ipc-settings.json.corrupt.'));
+
+    expect(bootstrap).toEqual({
+      authState: 'checking',
+      models: [],
+      settings: {
+        selectedModel: null,
+        recentDrawings: [],
+        lastDrawingPath: null,
+        windowBounds: null
+      }
+    });
+    expect(files).not.toContain('register-ipc-settings.json');
+    expect(quarantinedFile).toBeTruthy();
+    await expect(readFile(`${dirname(corruptedSettingsFilePath)}/${quarantinedFile}`, 'utf8')).resolves.toBe('{invalid json');
+
+    await rm(dirname(corruptedSettingsFilePath), { force: true, recursive: true });
   });
 });
