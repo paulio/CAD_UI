@@ -554,12 +554,22 @@ describe('registerIpc', () => {
 
     const openDrawing = handlers.get(ipcChannels.openDrawing);
 
-    await expect(openDrawing?.({}, undefined)).resolves.toEqual({
+    const result = await openDrawing?.({}, undefined);
+
+    expect(result).toEqual({
       canceled: false,
       filePath: 'drawing.dwg',
       session: null,
       error: 'CAD_AI ingest failed',
-      diagnostics: []
+      diagnostics: [
+        {
+          timestamp: expect.any(String),
+          source: 'cad-ai',
+          level: 'error',
+          message: 'Failed to open drawing session for drawing.dwg',
+          detail: 'CAD_AI ingest failed'
+        }
+      ]
     });
   });
 

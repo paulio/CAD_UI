@@ -205,6 +205,60 @@ describe('App shell', () => {
     });
   });
 
+  it('surfaces a missing-DXF open failure instead of leaving the viewer empty without context', async () => {
+    const message =
+      'Opened DWG D:/drawings/site.dwg but CAD_AI did not provide a usable DXF path. Generate a DXF output path or place an adjacent .dxf file next to the DWG.';
+    const openDrawing = vi.fn().mockResolvedValue({
+      canceled: false,
+      filePath: 'D:/drawings/site.dwg',
+      session: null,
+      scene: null,
+      error: message,
+      diagnostics: [
+        {
+          timestamp: '2026-05-03T12:00:00.000Z',
+          source: 'cad-ai',
+          level: 'error' as const,
+          message: 'Failed to open drawing session for D:/drawings/site.dwg',
+          detail: message
+        }
+      ]
+    });
+
+    window.cadUiApi = {
+      loadSettings: vi.fn(),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+      loadBootstrap: vi.fn().mockResolvedValue({
+        authState: 'ready',
+        models: ['gpt-5.4'],
+        settings: {
+          selectedModel: 'gpt-5.4',
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }
+      }),
+      listDiagnostics: vi.fn().mockResolvedValue([]),
+      openDrawing,
+      sendPrompt: vi.fn()
+    };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AI status: ready')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open DWG' }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(message)).toHaveLength(2);
+    });
+
+    expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('No drawing loaded');
+    expect(screen.getByText('Failed to open drawing session for D:/drawings/site.dwg')).toBeInTheDocument();
+  });
+
   it('allows replaying handle-only assistant geometry links', async () => {
     const openDrawing = vi.fn().mockResolvedValue({
       canceled: false,

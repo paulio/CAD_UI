@@ -48,6 +48,41 @@ describe('DrawingSessionService', () => {
     await rm(fixtureRoot, { force: true, recursive: true });
   });
 
+  it('fails clearly when a DWG opens without any usable DXF path', async () => {
+    const fixtureRoot = 'tests/.tmp/dwg-missing-dxf';
+    const sourcePath = join(fixtureRoot, 'sample.dwg');
+    const cachePath = join(fixtureRoot, 'sample.dwg.cadqcache');
+    const diagnostics = { add: vi.fn() };
+
+    await rm(fixtureRoot, { force: true, recursive: true });
+    await mkdir(fixtureRoot, { recursive: true });
+    await writeFile(sourcePath, '', 'utf8');
+
+    const service = new DrawingSessionService({
+      diagnostics,
+      cadAiAdapter: new CadAiAdapter({
+        cadAiRoot: 'D:/CAD/CAD_AI',
+        runCommand: vi.fn().mockResolvedValue({
+          exitCode: 0,
+          stdout: JSON.stringify({ cache: cachePath }),
+          stderr: ''
+        })
+      })
+    });
+
+    await expect(service.openDrawing(sourcePath)).rejects.toThrow(/did not provide a usable DXF path/i);
+    expect(diagnostics.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'cad-ai',
+        level: 'error',
+        message: expect.stringMatching(/Failed to open drawing session for .*sample\.dwg$/),
+        detail: expect.stringMatching(/did not provide a usable DXF path/i)
+      })
+    );
+
+    await rm(fixtureRoot, { force: true, recursive: true });
+  });
+
   it('builds a Python fallback command that imports cadq from the sibling repo source tree', async () => {
     const cadAiRoot = 'tests/.tmp/cad-ai-root';
     const pythonExe = join(cadAiRoot, '.venv', 'Scripts', 'python.exe');

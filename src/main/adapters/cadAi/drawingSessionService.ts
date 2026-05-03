@@ -29,7 +29,7 @@ export class DrawingSessionService {
       const ingest = await this.cadAiAdapter.ingest(sourcePath);
       const session = {
         sourcePath,
-        dxfPath: ingest.dxfPath,
+        dxfPath: requireUsableDxfPath(sourcePath, ingest.dxfPath),
         cachePath: ingest.cachePath,
         openedAt: new Date().toISOString()
       } satisfies DrawingSession;
@@ -54,4 +54,18 @@ export class DrawingSessionService {
       throw error;
     }
   }
+}
+
+function requireUsableDxfPath(sourcePath: string, dxfPath: string | null): string {
+  if (dxfPath !== null) {
+    return dxfPath;
+  }
+
+  if (sourcePath.toLowerCase().endsWith('.dwg')) {
+    throw new Error(
+      `Opened DWG ${sourcePath} but CAD_AI did not provide a usable DXF path. Generate a DXF output path or place an adjacent .dxf file next to the DWG.`
+    );
+  }
+
+  throw new Error(`Opened drawing ${sourcePath} but no usable DXF path was available.`);
 }

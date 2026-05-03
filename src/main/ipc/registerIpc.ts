@@ -186,6 +186,7 @@ export function registerIpc(
 
   registerHandler<OpenDrawingResult>(ipcChannels.openDrawing, async () => {
     let filePath: string | null = null;
+    let diagnosticCountBeforeOpen: number | null = null;
 
     try {
       const result = await dialog.showOpenDialog({
@@ -210,6 +211,7 @@ export function registerIpc(
         };
       }
 
+      diagnosticCountBeforeOpen = diagnosticsStore.list().length;
       const session = await getDrawingSessionService().openDrawing(filePath);
       const scene = session.dxfPath === null ? null : await buildSceneSafely(session.dxfPath, diagnosticsStore);
       const settings = await settingsStore.load();
@@ -230,6 +232,8 @@ export function registerIpc(
         diagnostics: diagnosticsStore.list()
       };
     } catch (error) {
+      ensureOpenDrawingDiagnostic(diagnosticsStore, filePath, error, diagnosticCountBeforeOpen);
+
       return {
         canceled: false,
         filePath,
@@ -462,6 +466,21 @@ function describeError(error: unknown): string | null {
   }
 
   return null;
+}
+
+function ensureOpenDrawingDiagnostic(
+  diagnosticsStore: DiagnosticsStore,
+  filePath: string | null,
+  error: unknown,
+  diagnosticCountBeforeOpen: number | null
+): void {
+  if (filePath === null || diagnosticCountBeforeOpen === null || diagnosticsStore.list().length > diagnosticCountBeforeOpen) {
+    return;
+  }
+
+  diagnosticsStore.add(
+    createDiagnosticEntry('cad-ai', 'error', `Failed to open drawing session for ${filePath}`, describeError(error))
+  );
 }
 
 function createDiagnosticEntry(
