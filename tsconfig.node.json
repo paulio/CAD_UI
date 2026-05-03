@@ -5,6 +5,7 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "noEmit": true,
+    "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

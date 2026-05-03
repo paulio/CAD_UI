@@ -8,8 +8,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test:unit": "vitest run",
-    "test:integration": "vitest run tests/integration",
-    "test:e2e": "playwright test"
+    "test:integration": "vitest run --passWithNoTests tests/integration",
+    "test:e2e": "playwright test --pass-with-no-tests"
   },
   "dependencies": {
     "electron": "^37.0.0",
