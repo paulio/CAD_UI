@@ -10,6 +10,15 @@ import type {
 import type { EntityHandle } from '../../../shared/contracts';
 import type { ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
 
+export type ChatReplayTarget = {
+  id: string;
+  label: string;
+  featureIds: string[];
+  entityHandles: EntityHandle[];
+  entityIds: string[];
+  highlightMode: HighlightMode;
+};
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -17,6 +26,7 @@ export type ChatMessage = {
   featureIds: string[];
   entityHandles: string[];
   highlightMode: HighlightMode;
+  replayTargets: ChatReplayTarget[];
 };
 
 export type AppStoreState = {
@@ -25,7 +35,10 @@ export type AppStoreState = {
   selectedModel: string | null;
   drawingSession: DrawingSession | null;
   scene: ViewerScene | null;
+  highlightedFeatureIds: string[];
   highlightedEntityIds: string[];
+  highlightedEntityHandles: EntityHandle[];
+  highlightMode: HighlightMode;
   messages: ChatMessage[];
   settings: AppSettings;
   bootstrapLoaded: boolean;
@@ -46,7 +59,7 @@ type AppStore = {
     selectModel: (model: string) => Promise<void>;
     openDrawing: () => Promise<void>;
     sendPrompt: () => Promise<void>;
-    focusFeatures: (featureIds: string[], entityHandles: string[], mode: HighlightMode) => void;
+    focusFeatures: (target: ChatReplayTarget) => void;
     selectEntity: (entityId: string) => void;
   };
 };
@@ -64,7 +77,10 @@ const initialState: AppStoreState = {
   selectedModel: null,
   drawingSession: null,
   scene: null,
+  highlightedFeatureIds: [],
   highlightedEntityIds: [],
+  highlightedEntityHandles: [],
+  highlightMode: 'none',
   messages: [],
   settings: defaultSettings,
   bootstrapLoaded: false,
@@ -169,16 +185,21 @@ export function useAppStore(): AppStore {
         return;
       }
 
-      setState((current) => ({
-        ...current,
-        isOpeningDrawing: false,
-        drawingSession: result.session,
-        scene: result.scene ?? null,
-        diagnostics: result.diagnostics,
-        openDrawingError: result.error,
-        highlightedEntityIds: [],
-        selectedEntityId: null
-      }));
+      setState((current) => {
+        const nextSettings = result.filePath === null ? current.settings : applyOpenedDrawingToSettings(current.settings, result.filePath);
+
+        return {
+          ...current,
+          isOpeningDrawing: false,
+          drawingSession: result.session,
+          scene: result.scene ?? null,
+          diagnostics: result.diagnostics,
+          openDrawingError: result.error,
+          settings: nextSettings,
+          ...emptyHighlightState(),
+          selectedEntityId: null
+        };
+      });
     } catch {
       setState((current) => ({
         ...current,
@@ -202,7 +223,8 @@ export function useAppStore(): AppStore {
             text: prompt,
             featureIds: [],
             entityHandles: [],
-            highlightMode: 'none' as const
+            highlightMode: 'none' as const,
+            replayTargets: []
           }
         : null;
 
@@ -213,7 +235,7 @@ export function useAppStore(): AppStore {
     }));
 
     try {
-      const selectedEntityHandles = resolveEntityHandles(state.scene, state.highlightedEntityIds);
+      const selectedEntityHandles = state.highlightedEntityHandles;
       const response = await window.cadUiApi.sendPrompt({
         model: state.selectedModel,
         prompt,
@@ -222,15 +244,20 @@ export function useAppStore(): AppStore {
         selectedEntityHandles
       });
 
-      const highlightedEntityIds = resolveHighlightedEntityIds(state.scene, response);
+      const nextHighlight = createHighlightState(state.scene, {
+        featureIds: response.featureIds,
+        entityHandles: collectEnvelopeHandles(response),
+        highlightMode: response.highlightMode
+      });
+      const assistantEntry = createAssistantEntry(response, state.scene);
 
       setState((current) => ({
         ...current,
         isSendingPrompt: false,
         prompt: '',
-        messages: [...current.messages, createAssistantEntry(response)],
-        highlightedEntityIds,
-        selectedEntityId: highlightedEntityIds[0] ?? current.selectedEntityId,
+        messages: [...current.messages, assistantEntry],
+        ...nextHighlight,
+        selectedEntityId: nextHighlight.highlightedEntityIds[0] ?? current.selectedEntityId,
         diagnostics: current.diagnostics
       }));
     } catch {
@@ -245,30 +272,42 @@ export function useAppStore(): AppStore {
             text: 'Prompt delivery failed before the renderer received a response.',
             featureIds: [],
             entityHandles: [],
-            highlightMode: 'none'
+            highlightMode: 'none',
+            replayTargets: []
           }
         ]
       }));
     }
   }
 
-  function focusFeatures(featureIds: string[], entityHandles: string[], mode: HighlightMode): void {
-    const highlightedEntityIds = resolveEntityIds(state.scene, featureIds, entityHandles);
+  function focusFeatures(target: ChatReplayTarget): void {
+    const nextHighlight = createHighlightState(state.scene, {
+      featureIds: target.featureIds,
+      entityHandles: target.entityHandles,
+      entityIds: target.entityIds,
+      highlightMode: target.highlightMode
+    });
 
     setState((current) => ({
       ...current,
-      highlightedEntityIds,
-      selectedEntityId: highlightedEntityIds[0] ?? current.selectedEntityId
+      ...nextHighlight,
+      selectedEntityId: nextHighlight.highlightedEntityIds[0] ?? current.selectedEntityId
     }));
   }
 
   function selectEntity(entityId: string): void {
     const entity = findEntityById(state.scene, entityId);
+    const nextHighlight = createHighlightState(state.scene, {
+      featureIds: [],
+      entityHandles: entity?.handle === null || entity?.handle === undefined ? [] : [entity.handle],
+      entityIds: [entityId],
+      highlightMode: 'focus'
+    });
 
     setState((current) => ({
       ...current,
       selectedEntityId: entityId,
-      highlightedEntityIds: entity === null ? [entityId] : resolveEntityIds(current.scene, [entityId], entity.handle === null ? [] : [entity.handle])
+      ...nextHighlight
     }));
   }
 
@@ -298,14 +337,15 @@ async function loadDiagnosticsSafely(): Promise<DiagnosticEntry[]> {
   }
 }
 
-function createAssistantEntry(response: AssistantEnvelope): ChatMessage {
+function createAssistantEntry(response: AssistantEnvelope, scene: ViewerScene | null): ChatMessage {
   return {
     id: createEntryId('assistant'),
     role: 'assistant',
     text: response.text,
     featureIds: response.featureIds,
-    entityHandles: response.entityHandles,
-    highlightMode: response.highlightMode
+    entityHandles: collectEnvelopeHandles(response),
+    highlightMode: response.highlightMode,
+    replayTargets: buildReplayTargets(scene, response)
   };
 }
 
@@ -313,18 +353,94 @@ function createEntryId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function resolveHighlightedEntityIds(scene: ViewerScene | null, response: AssistantEnvelope): string[] {
-  return resolveEntityIds(scene, response.featureIds, response.entityHandles);
+function emptyHighlightState() {
+  return {
+    highlightedFeatureIds: [],
+    highlightedEntityIds: [],
+    highlightedEntityHandles: [],
+    highlightMode: 'none' as const
+  };
 }
 
-function resolveEntityIds(scene: ViewerScene | null, featureIds: string[], entityHandles: string[]): string[] {
+function createHighlightState(
+  scene: ViewerScene | null,
+  input: {
+    featureIds: string[];
+    entityHandles: string[];
+    entityIds?: string[];
+    highlightMode: HighlightMode;
+  }
+) {
+  const highlightedFeatureIds = uniqueStrings(input.featureIds);
+  const highlightedEntityHandles = normalizeEntityHandles(input.entityHandles);
+  const highlightedEntityIds = uniqueStrings([
+    ...(input.entityIds ?? []),
+    ...resolveEntityIdsFromHandles(scene, highlightedEntityHandles)
+  ]);
+
+  return {
+    highlightedFeatureIds,
+    highlightedEntityIds,
+    highlightedEntityHandles,
+    highlightMode: input.highlightMode
+  };
+}
+
+function buildReplayTargets(scene: ViewerScene | null, response: AssistantEnvelope): ChatReplayTarget[] {
+  const featureIds = uniqueStrings(response.featureIds);
+  const envelopeHandles = collectEnvelopeHandles(response);
+  const featureTargets = featureIds.flatMap((featureId) => {
+    const handles = normalizeEntityHandles(
+      response.evidence
+        .filter((record) => record.featureId === featureId)
+        .map((record) => record.handle)
+    );
+    const scopedHandles = handles.length > 0 ? handles : featureIds.length === 1 ? envelopeHandles : [];
+
+    if (scopedHandles.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        id: `feature-${featureId}`,
+        label: `Focus feature ${featureId}`,
+        featureIds: [featureId],
+        entityHandles: scopedHandles,
+        entityIds: resolveEntityIdsFromHandles(scene, scopedHandles),
+        highlightMode: response.highlightMode
+      }
+    ];
+  });
+
+  if (featureTargets.length > 0) {
+    return featureTargets;
+  }
+
+  if (envelopeHandles.length === 0) {
+    return [];
+  }
+
+  return [
+    {
+      id: 'reply-linked-geometry',
+      label: 'Focus linked geometry',
+      featureIds: [],
+      entityHandles: envelopeHandles,
+      entityIds: resolveEntityIdsFromHandles(scene, envelopeHandles),
+      highlightMode: response.highlightMode
+    }
+  ];
+}
+
+function resolveEntityIdsFromHandles(scene: ViewerScene | null, entityHandles: string[]): string[] {
   if (scene === null) {
     return [];
   }
 
-  const entityIds = [...featureIds];
+  const entityIds: string[] = [];
 
-  for (const handle of entityHandles) {
+  for (const handle of normalizeEntityHandles(entityHandles)) {
     const entityId = scene.handleIndex[handle];
 
     if (typeof entityId === 'string' && !entityIds.includes(entityId)) {
@@ -358,5 +474,29 @@ function resolveEntityHandles(scene: ViewerScene | null, entityIds: string[]): E
     }
   }
 
-  return handles;
+  return normalizeEntityHandles(handles);
+}
+
+function collectEnvelopeHandles(response: AssistantEnvelope): EntityHandle[] {
+  return normalizeEntityHandles([...response.entityHandles, ...response.evidence.map((record) => record.handle)]);
+}
+
+function normalizeEntityHandles(handles: string[]): EntityHandle[] {
+  return uniqueStrings(handles.map(normalizeHandle).filter((handle): handle is EntityHandle => handle.length > 0));
+}
+
+function normalizeHandle(handle: string): EntityHandle {
+  return handle.trim().toUpperCase();
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return values.filter((value, index) => value.length > 0 && values.indexOf(value) === index);
+}
+
+function applyOpenedDrawingToSettings(settings: AppSettings, filePath: string): AppSettings {
+  return {
+    ...settings,
+    recentDrawings: [filePath, ...settings.recentDrawings.filter((entry) => entry !== filePath)].slice(0, 10),
+    lastDrawingPath: filePath
+  };
 }

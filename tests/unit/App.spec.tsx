@@ -82,30 +82,30 @@ describe('App shell', () => {
       .fn()
       .mockResolvedValueOnce({
         text: 'The highlighted tree is adjacent to the frontage line.',
-        featureIds: ['entity-tree-1'],
-        entityHandles: ['A1'],
-        highlightMode: 'focus',
+        featureIds: ['tree-feature'],
+        entityHandles: ['b0'],
+        highlightMode: 'outline',
         evidence: [
           {
-            featureId: 'entity-tree-1',
-            handle: 'A1',
+            featureId: 'tree-feature',
+            handle: 'b0',
             source: 'cad-ai'
           }
         ]
       })
       .mockResolvedValueOnce({
         text: 'Both highlighted entities remain in focus.',
-        featureIds: ['entity-tree-1', 'entity-line-1'],
+        featureIds: ['tree-feature', 'frontage-feature'],
         entityHandles: ['B0', 'A1'],
         highlightMode: 'focus',
         evidence: [
           {
-            featureId: 'entity-tree-1',
+            featureId: 'tree-feature',
             handle: 'B0',
             source: 'cad-ai'
           },
           {
-            featureId: 'entity-line-1',
+            featureId: 'frontage-feature',
             handle: 'A1',
             source: 'cad-ai'
           }
@@ -164,12 +164,13 @@ describe('App shell', () => {
     });
 
     expect(screen.getByText('The highlighted tree is adjacent to the frontage line.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Focus feature entity-tree-1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Focus feature tree-feature' })).toBeInTheDocument();
     expect(screen.getByText('Diagnostics')).toBeInTheDocument();
     expect(screen.getByText('Opened drawing session for D:/drawings/site.dxf')).toBeInTheDocument();
     expect(screen.getByText('Selected entity')).toBeInTheDocument();
     expect(screen.getByText('entity-tree-1')).toBeInTheDocument();
     expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlighted: entity-tree-1');
+    expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlight mode: outline');
 
     fireEvent.change(promptInput, { target: { value: 'Keep the same geometry in focus.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }));
@@ -179,23 +180,123 @@ describe('App shell', () => {
         model: 'gpt-5.4',
         prompt: 'Keep the same geometry in focus.',
         drawingPath: 'D:/drawings/site.dxf',
-        selectedEntityIds: ['entity-tree-1', 'entity-line-1'],
-        selectedEntityHandles: ['B0', 'A1']
+        selectedEntityIds: ['entity-tree-1'],
+        selectedEntityHandles: ['B0']
       });
     });
 
     expect(screen.getByText('Both highlighted entities remain in focus.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus feature frontage-feature' }));
+
+    expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlighted: entity-line-1');
+    expect(screen.getByText('entity-line-1')).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Copilot model' }), { target: { value: 'gpt-5.4-mini' } });
 
     await waitFor(() => {
       expect(saveSettings).toHaveBeenCalledWith({
         selectedModel: 'gpt-5.4-mini',
-        recentDrawings: [],
-        lastDrawingPath: null,
+        recentDrawings: ['D:/drawings/site.dxf'],
+        lastDrawingPath: 'D:/drawings/site.dxf',
         windowBounds: null
       });
     });
+  });
+
+  it('allows replaying handle-only assistant geometry links', async () => {
+    const openDrawing = vi.fn().mockResolvedValue({
+      canceled: false,
+      filePath: 'D:/drawings/site.dxf',
+      session: {
+        sourcePath: 'D:/drawings/site.dxf',
+        dxfPath: 'D:/drawings/site.dxf',
+        cachePath: 'D:/drawings/.cadqcache',
+        openedAt: '2026-05-03T12:00:00.000Z'
+      },
+      scene: {
+        drawingPath: 'D:/drawings/site.dxf',
+        bounds: {
+          minX: 0,
+          minY: 0,
+          maxX: 100,
+          maxY: 50
+        },
+        entities: [
+          {
+            id: 'entity-line-1',
+            kind: 'line',
+            handle: 'A1',
+            layer: 'SITE',
+            label: null,
+            bounds: {
+              minX: 0,
+              minY: 0,
+              maxX: 100,
+              maxY: 0
+            },
+            x1: 0,
+            y1: 0,
+            x2: 100,
+            y2: 0
+          }
+        ],
+        handleIndex: {
+          A1: 'entity-line-1'
+        }
+      },
+      error: null,
+      diagnostics: []
+    });
+
+    window.cadUiApi = {
+      loadSettings: vi.fn(),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+      loadBootstrap: vi.fn().mockResolvedValue({
+        authState: 'ready',
+        models: ['gpt-5.4'],
+        settings: {
+          selectedModel: 'gpt-5.4',
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }
+      }),
+      listDiagnostics: vi.fn().mockResolvedValue([]),
+      openDrawing,
+      sendPrompt: vi.fn().mockResolvedValue({
+        text: 'Highlighted the frontage line.',
+        featureIds: [],
+        entityHandles: ['a1'],
+        highlightMode: 'focus',
+        evidence: []
+      })
+    };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AI status: ready')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open DWG' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('site.dxf')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask about the drawing' }), {
+      target: { value: 'Highlight the frontage line.' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Focus linked geometry' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus linked geometry' }));
+
+    expect(screen.getByLabelText('Drawing canvas')).toHaveTextContent('Highlighted: entity-line-1');
   });
 
   it('falls back to an explicit safe state when bootstrap loading fails', async () => {

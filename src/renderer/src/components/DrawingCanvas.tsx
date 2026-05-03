@@ -1,8 +1,10 @@
+import type { HighlightMode } from '../../../shared/contracts';
 import type { ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
 
 type DrawingCanvasProps = {
   scene: ViewerScene | null;
   highlightedEntityIds: string[];
+  highlightMode: HighlightMode;
   selectedEntityId: string | null;
   onSelectEntity: (entityId: string) => void;
 };
@@ -26,10 +28,11 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
   const highlightedLabel = props.highlightedEntityIds[0] ?? 'none';
 
   return (
-    <section className="panel drawing-canvas" aria-label="Drawing canvas">
+    <section className="panel drawing-canvas" aria-label="Drawing canvas" data-highlight-mode={props.highlightMode}>
       <div className="panel__header">
         <h2>Viewer</h2>
         <p>{`Highlighted: ${highlightedLabel}`}</p>
+        <p>{`Highlight mode: ${props.highlightMode}`}</p>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Drawing canvas surface">
         <rect x="0" y="0" width={width} height={height} className="drawing-canvas__frame" />

@@ -1,5 +1,4 @@
-import type { HighlightMode } from '../../../shared/contracts';
-import type { ChatMessage } from '../store/useAppStore';
+import type { ChatMessage, ChatReplayTarget } from '../store/useAppStore';
 
 type ChatPanelProps = {
   messages: ChatMessage[];
@@ -8,7 +7,7 @@ type ChatPanelProps = {
   sending: boolean;
   onPromptChange: (prompt: string) => void;
   onSendPrompt: () => void;
-  onFocusFeatures: (featureIds: string[], entityHandles: string[], mode: HighlightMode) => void;
+  onFocusFeatures: (target: ChatReplayTarget) => void;
 };
 
 export function ChatPanel(props: ChatPanelProps) {
@@ -26,15 +25,15 @@ export function ChatPanel(props: ChatPanelProps) {
               <strong>{entry.role === 'user' ? 'You' : 'Copilot'}</strong>
             </header>
             <p>{entry.text}</p>
-            {entry.role === 'assistant' && entry.featureIds.length > 0 ? (
+            {entry.role === 'assistant' && entry.replayTargets.length > 0 ? (
               <div className="chat-entry__actions">
-                {entry.featureIds.map((featureId) => (
+                {entry.replayTargets.map((target) => (
                   <button
-                    key={featureId}
+                    key={target.id}
                     type="button"
-                    onClick={() => props.onFocusFeatures([featureId], entry.entityHandles, entry.highlightMode)}
+                    onClick={() => props.onFocusFeatures(target)}
                   >
-                    {`Focus feature ${featureId}`}
+                    {target.label}
                   </button>
                 ))}
               </div>

@@ -57,6 +57,7 @@ export function App() {
           <DrawingCanvas
             scene={state.scene}
             highlightedEntityIds={state.highlightedEntityIds}
+            highlightMode={state.highlightMode}
             selectedEntityId={state.selectedEntityId}
             onSelectEntity={actions.selectEntity}
           />

@@ -346,6 +346,41 @@ describe('registerIpc', () => {
     });
   });
 
+  it('does not reuse selected entity ids as semantic feature ids for plain-text prompt replies', async () => {
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.runPrompt.mockResolvedValue('The same geometry remains in focus.');
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const sendPrompt = handlers.get(ipcChannels.sendPrompt);
+    const response = await sendPrompt?.({}, {
+      model: 'gpt-5.4',
+      prompt: 'Keep the same geometry in focus.',
+      drawingPath: 'D:/drawings/site.dxf',
+      selectedEntityIds: ['entity-line-1'],
+      selectedEntityHandles: ['A1']
+    });
+
+    expect(response).toEqual({
+      text: 'The same geometry remains in focus.',
+      featureIds: [],
+      entityHandles: ['A1'],
+      highlightMode: 'focus',
+      evidence: []
+    });
+  });
+
   it('exposes a typed diagnostics list handler for renderer consumers', async () => {
     registerIpc(
       {

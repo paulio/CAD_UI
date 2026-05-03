@@ -239,10 +239,10 @@ function buildPromptRequest(prompt: string, request: SendPromptRequest): string 
     prompt,
     '',
     'Return either a normal text answer or JSON with this schema:',
-    '{"text":"string","featureIds":["entity-id"],"entityHandles":["handle"],"highlightMode":"focus|pulse|outline|zoomTo|none","evidence":[{"featureId":"entity-id","handle":"handle","source":"string"}]}',
+    '{"text":"string","featureIds":["semantic-feature-id"],"entityHandles":["handle"],"highlightMode":"focus|pulse|outline|zoomTo|none","evidence":[{"featureId":"semantic-feature-id","handle":"handle","source":"string"}]}',
     `Current selected entity ids: ${selectedEntityIds}`,
     `Current selected entity handles: ${selectedEntityHandles}`,
-    'When you reference geometry, include the matching featureIds and entityHandles.'
+    'FeatureIds are semantic CAD_AI feature identifiers. Entity handles identify concrete drawing geometry. Do not copy renderer entity ids into featureIds.'
   ].join('\n');
 }
 
@@ -254,11 +254,11 @@ function parseAssistantEnvelope(responseText: string, request: SendPromptRequest
   }
 
   return createAssistantEnvelope(responseText, {
-    featureIds: request.selectedEntityIds,
+    featureIds: [],
     entityHandles: request.selectedEntityHandles ?? [],
     highlightMode:
       request.selectedEntityIds.length > 0 || (request.selectedEntityHandles?.length ?? 0) > 0 ? 'focus' : 'none',
-    evidence: buildFallbackEvidence(request)
+    evidence: []
   });
 }
 
@@ -347,26 +347,6 @@ function createAssistantEnvelope(
     highlightMode: overrides.highlightMode ?? 'none',
     evidence: overrides.evidence ?? []
   };
-}
-
-function buildFallbackEvidence(request: SendPromptRequest) {
-  const handles = request.selectedEntityHandles ?? [];
-
-  return request.selectedEntityIds.flatMap((featureId, index) => {
-    const handle = handles[index];
-
-    if (typeof handle !== 'string') {
-      return [];
-    }
-
-    return [
-      {
-        featureId,
-        handle,
-        source: 'renderer-selection'
-      }
-    ];
-  });
 }
 
 function describePromptFailure(error: unknown): string {
