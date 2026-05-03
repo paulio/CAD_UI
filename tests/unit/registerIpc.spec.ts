@@ -22,6 +22,14 @@ vi.mock('electron', () => ({
 import { registerIpc } from '../../src/main/ipc/registerIpc';
 import { ipcChannels } from '../../src/shared/contracts';
 
+function createCopilotAdapterStub() {
+  return {
+    listModels: vi.fn().mockResolvedValue(['gpt-5.4', 'gpt-5.4-mini']),
+    probeAuth: vi.fn().mockResolvedValue('ready'),
+    runPrompt: vi.fn().mockResolvedValue('{"type":"assistant","message":"ok"}')
+  };
+}
+
 describe('registerIpc', () => {
   const corruptedSettingsFilePath = 'tests/.tmp/register-ipc-settings.json';
 
@@ -36,7 +44,7 @@ describe('registerIpc', () => {
         windowBounds: null
       }),
       save
-    } as never);
+    } as never, createCopilotAdapterStub());
 
     const saveSettings = handlers.get(ipcChannels.saveSettings);
 
@@ -66,7 +74,7 @@ describe('registerIpc', () => {
         windowBounds: null
       }),
       save
-    } as never);
+    } as never, createCopilotAdapterStub());
 
     const saveSettings = handlers.get(ipcChannels.saveSettings);
     const payload = {
@@ -93,7 +101,7 @@ describe('registerIpc', () => {
         windowBounds: null
       }),
       save: vi.fn()
-    } as never);
+    } as never, createCopilotAdapterStub());
 
     const sendPrompt = handlers.get(ipcChannels.sendPrompt);
 
@@ -109,7 +117,7 @@ describe('registerIpc', () => {
         windowBounds: null
       }),
       save: vi.fn()
-    } as never);
+    } as never, createCopilotAdapterStub());
 
     const sendPrompt = handlers.get(ipcChannels.sendPrompt);
     const response = await sendPrompt?.(
@@ -132,7 +140,7 @@ describe('registerIpc', () => {
     await mkdir(dirname(corruptedSettingsFilePath), { recursive: true });
     await writeFile(corruptedSettingsFilePath, '{invalid json', 'utf8');
 
-    registerIpc(new SettingsStore(corruptedSettingsFilePath));
+    registerIpc(new SettingsStore(corruptedSettingsFilePath), createCopilotAdapterStub());
 
     const loadBootstrap = handlers.get(ipcChannels.loadBootstrap);
     const bootstrap = await loadBootstrap?.({}, undefined);
@@ -140,8 +148,8 @@ describe('registerIpc', () => {
     const quarantinedFile = files.find((file) => file.startsWith('.register-ipc-settings.json.corrupt.'));
 
     expect(bootstrap).toEqual({
-      authState: 'checking',
-      models: [],
+      authState: 'ready',
+      models: ['gpt-5.4', 'gpt-5.4-mini'],
       settings: {
         selectedModel: null,
         recentDrawings: [],

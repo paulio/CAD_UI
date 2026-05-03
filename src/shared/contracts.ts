@@ -3,8 +3,10 @@ export type WindowBounds = {
   height: number;
 };
 
+export type ModelId = string;
+
 export type AppSettings = {
-  selectedModel: string | null;
+  selectedModel: ModelId | null;
   recentDrawings: string[];
   lastDrawingPath: string | null;
   windowBounds: WindowBounds | null;
@@ -30,7 +32,7 @@ export type AssistantEnvelope = {
 
 export type BootstrapData = {
   authState: AuthState;
-  models: string[];
+  models: ModelId[];
   settings: AppSettings;
 };
 
@@ -40,7 +42,7 @@ export type OpenDrawingResult = {
 };
 
 export type SendPromptRequest = {
-  model: string | null;
+  model: ModelId | null;
   prompt: string;
   drawingPath: string | null;
   selectedEntityIds: string[];

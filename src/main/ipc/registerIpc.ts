@@ -3,11 +3,15 @@ import type {
   AppSettings,
   AssistantEnvelope,
   BootstrapData,
+  AuthState,
   WindowBounds,
   SendPromptRequest
 } from '../../shared/contracts';
 import { ipcChannels } from '../../shared/contracts';
+import { CopilotAdapter } from '../adapters/copilot/copilotAdapter';
 import { SettingsStore } from '../services/settingsStore';
+
+type CopilotAdapterLike = Pick<CopilotAdapter, 'listModels' | 'probeAuth' | 'runPrompt'>;
 
 function registerHandler<TReturn>(
   channel: string,
@@ -79,18 +83,30 @@ function parseSendPromptRequest(payload: unknown): SendPromptRequest {
   };
 }
 
-export function registerIpc(settingsStore: SettingsStore): void {
+export function registerIpc(
+  settingsStore: SettingsStore,
+  copilotAdapter: CopilotAdapterLike = new CopilotAdapter()
+): void {
+
   registerHandler<AppSettings>(ipcChannels.loadSettings, () => settingsStore.load());
 
   registerHandler<void>(ipcChannels.saveSettings, async (payload) => {
     await settingsStore.save(parseAppSettings(payload));
   });
 
-  registerHandler<BootstrapData>(ipcChannels.loadBootstrap, async () => ({
-    authState: 'checking',
-    models: [],
-    settings: await settingsStore.load()
-  }));
+  registerHandler<BootstrapData>(ipcChannels.loadBootstrap, async () => {
+    const settings = await settingsStore.load();
+    const [modelsResult, authResult] = await Promise.allSettled([
+      copilotAdapter.listModels(),
+      copilotAdapter.probeAuth()
+    ]);
+
+    return {
+      authState: authResult.status === 'fulfilled' ? authResult.value : 'cli-missing',
+      models: modelsResult.status === 'fulfilled' ? modelsResult.value : [],
+      settings
+    };
+  });
 
   registerHandler(ipcChannels.openDrawing, async () => {
     const result = await dialog.showOpenDialog({
@@ -124,13 +140,74 @@ export function registerIpc(settingsStore: SettingsStore): void {
 
   registerHandler<AssistantEnvelope>(ipcChannels.sendPrompt, async (_payload: unknown) => {
     const request = parseSendPromptRequest(_payload);
+    const prompt = request.prompt.trim();
 
     return {
-      text: request.prompt.trim().length > 0 ? 'Prompt handling is not implemented yet.' : 'Enter a prompt to begin.',
+      text: await resolvePromptText(copilotAdapter, request, prompt),
       featureIds: [],
       entityHandles: [],
       highlightMode: 'none',
       evidence: []
     };
   });
+}
+
+async function resolvePromptText(
+  copilotAdapter: CopilotAdapter,
+  request: SendPromptRequest,
+  prompt: string
+): Promise<string> {
+  if (prompt.length === 0) {
+    return 'Enter a prompt to begin.';
+  }
+
+  if (request.model === null) {
+    return 'Select a Copilot model before sending a prompt.';
+  }
+
+  try {
+    return await copilotAdapter.runPrompt(request.model, prompt);
+  } catch (error) {
+    return describePromptFailure(error);
+  }
+}
+
+function describePromptFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  const stderr = extractStringProperty(error, 'stderr');
+  const errorCode = extractStringProperty(error, 'code');
+  const authState = classifyPromptFailure({ message, stderr, errorCode });
+
+  if (authState === 'reauth-required') {
+    return 'Copilot CLI is not authenticated. Run copilot login and try again.';
+  }
+
+  if (authState === 'cli-missing') {
+    return 'Copilot CLI is unavailable. Install it or add it to PATH and try again.';
+  }
+
+  return 'Copilot CLI prompt failed.';
+}
+
+function classifyPromptFailure(input: { message: string; stderr: string; errorCode: string }): AuthState {
+  const diagnostic = [input.message, input.stderr].join('\n');
+
+  if (input.errorCode.toUpperCase() === 'ENOENT') {
+    return 'cli-missing';
+  }
+
+  if (/copilot login|log[ -]?in|authenticate|authentication|credential|token|sign[ -]?in/i.test(diagnostic)) {
+    return 'reauth-required';
+  }
+
+  return 'cli-missing';
+}
+
+function extractStringProperty(value: unknown, key: string): string {
+  if (typeof value !== 'object' || value === null) {
+    return '';
+  }
+
+  const record = value as Record<string, unknown>;
+  return typeof record[key] === 'string' ? record[key] : '';
 }
