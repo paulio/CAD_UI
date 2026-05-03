@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { format, parse, resolve, sep } from 'node:path';
 import { locateCadAiRoot, resolveCadAiCommand } from './cadAiLocator';
 
 const CAD_AI_TIMEOUT_MS = 120_000;
@@ -55,14 +56,36 @@ export class CadAiAdapter {
     );
     const payload = parseJsonRecord(result.stdout);
     const cachePath = readRequiredPath(payload, 'cache');
-    const dxfPath = readOptionalPath(payload, ['dxf', 'dxfPath', 'dxf_path']);
+    const dxfPath = inferDxfPath(sourcePath, readOptionalPath(payload, ['dxf', 'dxfPath', 'dxf_path']));
 
     return {
       sourcePath,
       cachePath,
-      dxfPath: dxfPath ?? (sourcePath.toLowerCase().endsWith('.dxf') ? sourcePath : null)
+      dxfPath
     };
   }
+}
+
+function inferDxfPath(sourcePath: string, explicitDxfPath: string | null): string | null {
+  if (explicitDxfPath !== null) {
+    return explicitDxfPath;
+  }
+
+  if (sourcePath.toLowerCase().endsWith('.dxf')) {
+    return sourcePath;
+  }
+
+  if (!sourcePath.toLowerCase().endsWith('.dwg')) {
+    return null;
+  }
+
+  const adjacentDxfPath = format({
+    ...parse(sourcePath),
+    base: undefined,
+    ext: '.dxf'
+  });
+
+  return existsSync(adjacentDxfPath) ? adjacentDxfPath : null;
 }
 
 function runCadAiCommand(command: string, args: string[], options: { cwd: string; timeoutMs: number }): Promise<CadAiCommandResult> {

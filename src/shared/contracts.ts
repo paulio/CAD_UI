@@ -57,6 +57,8 @@ export type OpenDrawingResult = {
   canceled: boolean;
   filePath: string | null;
   session: DrawingSession | null;
+  error: string | null;
+  diagnostics: DiagnosticEntry[];
 };
 
 export type SendPromptRequest = {
@@ -70,6 +72,7 @@ export interface CadUiApi {
   loadSettings: () => Promise<AppSettings>;
   saveSettings: (settings: AppSettings) => Promise<void>;
   loadBootstrap: () => Promise<BootstrapData>;
+  listDiagnostics: () => Promise<DiagnosticEntry[]>;
   openDrawing: () => Promise<OpenDrawingResult>;
   sendPrompt: (request: SendPromptRequest) => Promise<AssistantEnvelope>;
 }
@@ -78,6 +81,7 @@ export const ipcChannels = {
   loadSettings: 'settings:load',
   saveSettings: 'settings:save',
   loadBootstrap: 'app:bootstrap',
+  listDiagnostics: 'diagnostics:list',
   openDrawing: 'drawing:open',
   sendPrompt: 'prompt:send'
 } as const;

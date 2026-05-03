@@ -57,10 +57,26 @@ export function resolveCadAiCommand(cadAiRoot: string): CadAiCommand {
   if (existsSync(pythonExe)) {
     return {
       command: pythonExe,
-      args: ['-c', 'from cadq.cli import app; app()'],
+      args: ['-c', buildPythonFallbackSnippet(root)],
       cwd: root
     };
   }
 
   throw new Error(`Unable to locate CAD_AI executable under ${root}`);
+}
+
+function buildPythonFallbackSnippet(cadAiRoot: string): string {
+  const root = JSON.stringify(cadAiRoot);
+
+  return [
+    'import sys',
+    'from pathlib import Path',
+    `root = Path(${root})`,
+    'for candidate in (root / "src", root):',
+    '    candidate_str = str(candidate)',
+    '    if candidate.exists() and candidate_str not in sys.path:',
+    '        sys.path.insert(0, candidate_str)',
+    'from cadq.cli import app',
+    'app()'
+  ].join('\n');
 }

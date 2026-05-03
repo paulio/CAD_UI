@@ -4,6 +4,7 @@ import type {
   AssistantEnvelope,
   BootstrapData,
   AuthState,
+  DiagnosticEntry,
   OpenDrawingResult,
   WindowBounds,
   SendPromptRequest
@@ -132,42 +133,60 @@ export function registerIpc(
     };
   });
 
+  registerHandler<DiagnosticEntry[]>(ipcChannels.listDiagnostics, () => diagnosticsStore.list());
+
   registerHandler<OpenDrawingResult>(ipcChannels.openDrawing, async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile'],
-      filters: [
-        {
-          name: 'CAD drawings',
-          extensions: ['dwg', 'dxf']
-        }
-      ]
-    });
+    let filePath: string | null = null;
 
-    const filePath = result.canceled ? null : result.filePaths[0] ?? null;
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'CAD drawings',
+            extensions: ['dwg', 'dxf']
+          }
+        ]
+      });
 
-    if (filePath === null) {
+      filePath = result.canceled ? null : result.filePaths[0] ?? null;
+
+      if (filePath === null) {
+        return {
+          canceled: result.canceled,
+          filePath: null,
+          session: null,
+          error: null,
+          diagnostics: diagnosticsStore.list()
+        };
+      }
+
+      const session = await getDrawingSessionService().openDrawing(filePath);
+      const settings = await settingsStore.load();
+      const recentDrawings = [filePath, ...settings.recentDrawings.filter((entry) => entry !== filePath)].slice(0, 10);
+
+      await settingsStore.save({
+        ...settings,
+        recentDrawings,
+        lastDrawingPath: filePath
+      });
+
       return {
-        canceled: result.canceled,
-        filePath: null,
-        session: null
+        canceled: false,
+        filePath,
+        session,
+        error: null,
+        diagnostics: diagnosticsStore.list()
+      };
+    } catch (error) {
+      return {
+        canceled: false,
+        filePath,
+        session: null,
+        error: describeOpenDrawingFailure(error),
+        diagnostics: diagnosticsStore.list()
       };
     }
-
-    const session = await getDrawingSessionService().openDrawing(filePath);
-    const settings = await settingsStore.load();
-    const recentDrawings = [filePath, ...settings.recentDrawings.filter((entry) => entry !== filePath)].slice(0, 10);
-
-    await settingsStore.save({
-      ...settings,
-      recentDrawings,
-      lastDrawingPath: filePath
-    });
-
-    return {
-      canceled: false,
-      filePath,
-      session
-    };
   });
 
   registerHandler<AssistantEnvelope>(ipcChannels.sendPrompt, async (_payload: unknown) => {
@@ -182,6 +201,14 @@ export function registerIpc(
       evidence: []
     };
   });
+}
+
+function describeOpenDrawingFailure(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return 'Failed to open drawing.';
 }
 
 async function resolvePromptText(

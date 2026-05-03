@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsStore } from '../../src/main/services/settingsStore';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>();
@@ -19,6 +19,7 @@ vi.mock('electron', () => ({
   }
 }));
 
+import { dialog } from 'electron';
 import { registerIpc } from '../../src/main/ipc/registerIpc';
 import { ipcChannels } from '../../src/shared/contracts';
 
@@ -32,6 +33,11 @@ function createCopilotAdapterStub() {
 
 describe('registerIpc', () => {
   const corruptedSettingsFilePath = 'tests/.tmp/register-ipc-settings.json';
+
+  beforeEach(() => {
+    handlers.clear();
+    vi.clearAllMocks();
+  });
 
   it('rejects malformed settings payloads with a controlled error', async () => {
     const save = vi.fn();
@@ -291,6 +297,88 @@ describe('registerIpc', () => {
 
     expect(response).toMatchObject({
       text: 'Copilot CLI prompt failed.'
+    });
+  });
+
+  it('exposes a typed diagnostics list handler for renderer consumers', async () => {
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      createCopilotAdapterStub()
+    );
+
+    const listDiagnostics = handlers.get(ipcChannels.listDiagnostics);
+
+    expect(listDiagnostics?.({}, undefined)).toEqual([]);
+  });
+
+  it('returns a structured openDrawing failure instead of rejecting the IPC call', async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+      canceled: false,
+      filePaths: ['drawing.dwg']
+    } as never);
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      createCopilotAdapterStub(),
+      {
+        openDrawing: vi.fn().mockRejectedValue(new Error('CAD_AI ingest failed'))
+      } as never
+    );
+
+    const openDrawing = handlers.get(ipcChannels.openDrawing);
+
+    await expect(openDrawing?.({}, undefined)).resolves.toEqual({
+      canceled: false,
+      filePath: 'drawing.dwg',
+      session: null,
+      error: 'CAD_AI ingest failed',
+      diagnostics: []
+    });
+  });
+
+  it('returns cancellation without reporting an error', async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+      canceled: true,
+      filePaths: []
+    } as never);
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      createCopilotAdapterStub()
+    );
+
+    const openDrawing = handlers.get(ipcChannels.openDrawing);
+
+    await expect(openDrawing?.({}, undefined)).resolves.toEqual({
+      canceled: true,
+      filePath: null,
+      session: null,
+      error: null,
+      diagnostics: []
     });
   });
 });

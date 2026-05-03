@@ -6,6 +6,7 @@ const cadUiApi: CadUiApi = {
 	loadSettings: () => ipcRenderer.invoke(ipcChannels.loadSettings),
 	saveSettings: (settings: AppSettings) => ipcRenderer.invoke(ipcChannels.saveSettings, settings),
 	loadBootstrap: () => ipcRenderer.invoke(ipcChannels.loadBootstrap),
+	listDiagnostics: () => ipcRenderer.invoke(ipcChannels.listDiagnostics),
 	openDrawing: () => ipcRenderer.invoke(ipcChannels.openDrawing),
 	sendPrompt: (request: SendPromptRequest) => ipcRenderer.invoke(ipcChannels.sendPrompt, request)
 };
