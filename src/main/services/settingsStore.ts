@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { AppSettings, WindowBounds } from '../../shared/contracts';
 
 export function defaultSettings(): AppSettings {
@@ -44,14 +44,40 @@ export class SettingsStore {
   async load(): Promise<AppSettings> {
     try {
       const raw = await fs.readFile(this.filePath, 'utf8');
-      return normalizeSettings(JSON.parse(raw));
-    } catch {
-      return defaultSettings();
+      try {
+        return normalizeSettings(JSON.parse(raw));
+      } catch (error) {
+        throw new Error(`Settings file contains invalid JSON: ${this.filePath}`, {
+          cause: error
+        });
+      }
+    } catch (error) {
+      if (isNodeError(error) && error.code === 'ENOENT') {
+        return defaultSettings();
+      }
+
+      throw error;
     }
   }
 
   async save(settings: AppSettings): Promise<void> {
     await fs.mkdir(dirname(this.filePath), { recursive: true });
-    await fs.writeFile(this.filePath, JSON.stringify(normalizeSettings(settings), null, 2), 'utf8');
+
+    const tempPath = join(
+      dirname(this.filePath),
+      `.${basename(this.filePath)}.${process.pid}.${Date.now()}.tmp`
+    );
+
+    try {
+      await fs.writeFile(tempPath, JSON.stringify(normalizeSettings(settings), null, 2), 'utf8');
+      await fs.rename(tempPath, this.filePath);
+    } catch (error) {
+      await fs.rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error;
 }

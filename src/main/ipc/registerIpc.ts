@@ -16,6 +16,34 @@ function registerHandler<TReturn>(
   ipcMain.handle(channel, (_event, payload) => handler(payload));
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function parseSendPromptRequest(payload: unknown): SendPromptRequest {
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('Invalid prompt request payload.');
+  }
+
+  const request = payload as Record<string, unknown>;
+
+  if (
+    (request.model !== null && typeof request.model !== 'string') ||
+    typeof request.prompt !== 'string' ||
+    (request.drawingPath !== null && typeof request.drawingPath !== 'string') ||
+    !isStringArray(request.selectedEntityIds)
+  ) {
+    throw new Error('Invalid prompt request payload.');
+  }
+
+  return {
+    model: request.model,
+    prompt: request.prompt,
+    drawingPath: request.drawingPath,
+    selectedEntityIds: request.selectedEntityIds
+  };
+}
+
 export function registerIpc(settingsStore: SettingsStore): void {
   registerHandler<AppSettings>(ipcChannels.loadSettings, () => settingsStore.load());
 
@@ -60,7 +88,7 @@ export function registerIpc(settingsStore: SettingsStore): void {
   });
 
   registerHandler<AssistantEnvelope>(ipcChannels.sendPrompt, async (_payload: unknown) => {
-    const request = _payload as SendPromptRequest;
+    const request = parseSendPromptRequest(_payload);
 
     return {
       text: request.prompt.trim().length > 0 ? 'Prompt handling is not implemented yet.' : 'Enter a prompt to begin.',
