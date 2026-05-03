@@ -1,5 +1,5 @@
 import type { HighlightMode } from '../../../shared/contracts';
-import type { Point2D, ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
+import type { Point2D, ViewerEntity, ViewerPolylineEntity, ViewerPolylineVertex, ViewerScene } from '../../../shared/viewerTypes';
 
 type DrawingCanvasProps = {
   scene: ViewerScene | null;
@@ -69,8 +69,15 @@ function renderEntity(
   switch (entity.kind) {
     case 'line':
       return <line key={entity.id} {...commonProps} x1={toSvgX(entity.x1, minX)} y1={toSvgY(entity.y1, maxY)} x2={toSvgX(entity.x2, minX)} y2={toSvgY(entity.y2, maxY)} />;
-    case 'polyline':
+    case 'polyline': {
+      const pathData = toSvgPolylinePathData(entity, minX, maxY);
+
+      if (pathData !== null) {
+        return <path key={entity.id} {...commonProps} d={pathData} fill="none" />;
+      }
+
       return <polyline key={entity.id} {...commonProps} points={toSvgPointString(entity.points, minX, maxY, entity.closed)} fill="none" />;
+    }
     case 'insert':
       return <circle key={entity.id} {...commonProps} cx={toSvgX(entity.x, minX)} cy={toSvgY(entity.y, maxY)} r={4} />;
     case 'circle':
@@ -121,6 +128,54 @@ function toSvgPointString(points: Point2D[], minX: number, maxY: number, closed:
   const renderPoints = closed && points.length > 0 ? [...points, points[0]] : points;
 
   return renderPoints.map((point) => `${toSvgX(point.x, minX)},${toSvgY(point.y, maxY)}`).join(' ');
+}
+
+function toSvgPolylinePathData(entity: ViewerPolylineEntity, minX: number, maxY: number): string | null {
+  if (!entity.vertices.some((vertex) => Math.abs(vertex.bulge) >= 1e-9) || entity.vertices.length === 0) {
+    return null;
+  }
+
+  const commands = [`M ${toSvgX(entity.vertices[0].x, minX)} ${toSvgY(entity.vertices[0].y, maxY)}`];
+  const segmentCount = entity.closed ? entity.vertices.length : entity.vertices.length - 1;
+
+  for (let index = 0; index < segmentCount; index += 1) {
+    const start = entity.vertices[index];
+    const end = entity.vertices[(index + 1) % entity.vertices.length];
+
+    commands.push(toSvgPolylineSegmentCommand(start, end, minX, maxY));
+  }
+
+  return commands.join(' ');
+}
+
+function toSvgPolylineSegmentCommand(start: ViewerPolylineVertex, end: ViewerPolylineVertex, minX: number, maxY: number): string {
+  const endX = toSvgX(end.x, minX);
+  const endY = toSvgY(end.y, maxY);
+
+  if (!Number.isFinite(start.bulge) || Math.abs(start.bulge) < 1e-9) {
+    return `L ${endX} ${endY}`;
+  }
+
+  const chordX = end.x - start.x;
+  const chordY = end.y - start.y;
+  const chordLength = Math.hypot(chordX, chordY);
+
+  if (chordLength < 1e-9) {
+    return `L ${endX} ${endY}`;
+  }
+
+  const midpointX = (start.x + end.x) / 2;
+  const midpointY = (start.y + end.y) / 2;
+  const leftNormalX = -chordY / chordLength;
+  const leftNormalY = chordX / chordLength;
+  const offset = (chordLength * (1 - start.bulge * start.bulge)) / (4 * start.bulge);
+  const centerX = midpointX + leftNormalX * offset;
+  const centerY = midpointY + leftNormalY * offset;
+  const radius = Math.hypot(start.x - centerX, start.y - centerY);
+  const largeArcFlag = Math.abs(4 * Math.atan(start.bulge)) > Math.PI ? 1 : 0;
+  const sweepFlag = start.bulge > 0 ? 0 : 1;
+
+  return `A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${endX} ${endY}`;
 }
 
 function normalizeRadians(angle: number): number {

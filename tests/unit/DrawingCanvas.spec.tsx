@@ -91,4 +91,53 @@ describe('DrawingCanvas', () => {
 
     expect(screen.getByRole('button', { name: 'Closed boundary' })).toHaveAttribute('points', '0,10 10,10 10,0 0,10');
   });
+
+  it('renders bulged polyline segments as curved SVG path commands instead of a straight polyline chord', () => {
+    const scene: ViewerScene = {
+      drawingPath: 'bulged-polyline.dxf',
+      bounds: {
+        minX: 0,
+        minY: -5,
+        maxX: 10,
+        maxY: 0
+      },
+      entities: [
+        {
+          id: 'entity-polyline-2',
+          kind: 'polyline',
+          handle: 'P2',
+          layer: '0',
+          label: 'Curved boundary',
+          bounds: {
+            minX: 0,
+            minY: -5,
+            maxX: 10,
+            maxY: 0
+          },
+          points: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 }
+          ],
+          vertices: [
+            { x: 0, y: 0, bulge: 1 },
+            { x: 10, y: 0, bulge: 0 }
+          ],
+          closed: false
+        }
+      ],
+      handleIndex: {
+        P2: 'entity-polyline-2'
+      }
+    };
+
+    const { container } = render(
+      <DrawingCanvas scene={scene} highlightedEntityIds={[]} highlightMode="none" selectedEntityId={null} onSelectEntity={vi.fn()} />
+    );
+
+    const curvedPath = screen.getByRole('button', { name: 'Curved boundary' });
+
+    expect(curvedPath.tagName.toLowerCase()).toBe('path');
+    expect(curvedPath).toHaveAttribute('d', 'M 0 0 A 5 5 0 0 0 10 0');
+    expect(container.querySelector('polyline[aria-label="Curved boundary"]')).toBeNull();
+  });
 });
