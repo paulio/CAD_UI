@@ -92,6 +92,27 @@ function parseSendPromptRequest(payload: unknown): SendPromptRequest {
   };
 }
 
+function parseBootstrapAuthOverride(value: string | undefined): AuthState | null {
+  if (value === 'checking' || value === 'ready' || value === 'reauth-required' || value === 'cli-missing') {
+    return value;
+  }
+
+  return null;
+}
+
+function readBootstrapOverrides(): { authState: AuthState | null; models: string[] | null } {
+  const authState = parseBootstrapAuthOverride(process.env.CAD_UI_E2E_AUTH_STATE);
+  const models = process.env.CAD_UI_E2E_MODELS
+    ?.split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return {
+    authState,
+    models: models !== undefined ? models : null
+  };
+}
+
 export function registerIpc(
   settingsStore: SettingsStore,
   copilotAdapter: CopilotAdapterLike = new CopilotAdapter(),
@@ -118,10 +139,24 @@ export function registerIpc(
 
   registerHandler<BootstrapData>(ipcChannels.loadBootstrap, async () => {
     const settings = await settingsStore.load();
+    const bootstrapOverrides = readBootstrapOverrides();
     const [modelsResult, authResult] = await Promise.allSettled([
-      copilotAdapter.listModels(),
-      copilotAdapter.probeAuth()
+      bootstrapOverrides.models === null ? copilotAdapter.listModels() : Promise.resolve(bootstrapOverrides.models),
+      bootstrapOverrides.authState === null ? copilotAdapter.probeAuth() : Promise.resolve(bootstrapOverrides.authState)
     ]);
+
+    if (modelsResult.status === 'rejected') {
+      diagnosticsStore.add(
+        createDiagnosticEntry('copilot', 'error', 'Model catalog discovery failed.', describeError(modelsResult.reason))
+      );
+    }
+
+    if (authResult.status === 'rejected') {
+      diagnosticsStore.add(
+        createDiagnosticEntry('copilot', 'error', 'Copilot authentication probe failed.', describeError(authResult.reason))
+      );
+    }
+
     const models = modelsResult.status === 'fulfilled' ? modelsResult.value : [];
     const reconciledSettings = reconcileBootstrapSettings(settings, models, isTrustworthyModelCatalog(modelsResult));
 
@@ -198,7 +233,7 @@ export function registerIpc(
     const request = parseSendPromptRequest(_payload);
     const prompt = request.prompt.trim();
 
-    return await resolvePromptEnvelope(copilotAdapter, request, prompt);
+    return await resolvePromptEnvelope(copilotAdapter, diagnosticsStore, request, prompt);
   });
 }
 
@@ -212,6 +247,7 @@ function describeOpenDrawingFailure(error: unknown): string {
 
 async function resolvePromptEnvelope(
   copilotAdapter: CopilotAdapterLike,
+  diagnosticsStore: DiagnosticsStore,
   request: SendPromptRequest,
   prompt: string
 ): Promise<AssistantEnvelope> {
@@ -227,6 +263,7 @@ async function resolvePromptEnvelope(
     const responseText = await copilotAdapter.runPrompt(request.model, buildPromptRequest(prompt, request));
     return parseAssistantEnvelope(responseText, request);
   } catch (error) {
+    diagnosticsStore.add(createDiagnosticEntry('copilot', 'error', 'Prompt execution failed.', describeError(error)));
     return createAssistantEnvelope(describePromptFailure(error));
   }
 }
@@ -404,17 +441,40 @@ function extractStringProperty(value: unknown, key: string): string {
   return typeof record[key] === 'string' ? record[key] : '';
 }
 
+function describeError(error: unknown): string | null {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error;
+  }
+
+  return null;
+}
+
+function createDiagnosticEntry(
+  source: string,
+  level: DiagnosticEntry['level'],
+  message: string,
+  detail: string | null
+): DiagnosticEntry {
+  return {
+    timestamp: new Date().toISOString(),
+    source,
+    level,
+    message,
+    detail
+  };
+}
+
 async function buildSceneSafely(dxfPath: string, diagnosticsStore: DiagnosticsStore) {
   try {
     return await buildSceneFromDxf(dxfPath);
   } catch (error) {
-    diagnosticsStore.add({
-      timestamp: new Date().toISOString(),
-      source: 'viewer',
-      level: 'error',
-      message: `Failed to build viewer scene for ${dxfPath}`,
-      detail: error instanceof Error ? error.message : String(error)
-    });
+    diagnosticsStore.add(
+      createDiagnosticEntry('viewer', 'error', `Failed to build viewer scene for ${dxfPath}`, describeError(error))
+    );
 
     return null;
   }

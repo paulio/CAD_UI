@@ -9,7 +9,7 @@
     "preview": "electron-vite preview",
     "test:unit": "vitest run",
     "test:integration": "vitest run --passWithNoTests tests/integration",
-    "test:e2e": "playwright test --pass-with-no-tests"
+    "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
     "dxf-parser": "^1.1.2",
