@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CopilotAdapter } from '../../src/main/adapters/copilot/copilotAdapter';
-import { parseModelCatalog, parseProbeResult } from '../../src/main/adapters/copilot/modelCatalog';
+import { classifyCopilotFailure, parseModelCatalog, parseProbeResult } from '../../src/main/adapters/copilot/modelCatalog';
 
 const helpText = [
   '  `theme`: Terminal color theme.',
@@ -19,6 +19,12 @@ describe('Copilot model parsing', () => {
   it('normalizes auth failures from probe stderr', () => {
     expect(parseProbeResult({ exitCode: 1, stderr: 'Please run copilot login first.' })).toEqual('reauth-required');
   });
+
+  it('keeps unknown probe failures in a safe checking state', () => {
+    expect(classifyCopilotFailure({ exitCode: 1, stderr: 'network interrupted', errorCode: 'ETIMEDOUT' })).toEqual(
+      'checking'
+    );
+  });
 });
 
 describe('CopilotAdapter', () => {
@@ -31,7 +37,7 @@ describe('CopilotAdapter', () => {
     const adapter = new CopilotAdapter({ runCommand });
 
     await expect(adapter.listModels()).resolves.toEqual(['gpt-5.4', 'gpt-5.4-mini', 'claude-sonnet-4.6']);
-    expect(runCommand).toHaveBeenCalledWith(['help', 'config']);
+    expect(runCommand).toHaveBeenCalledWith(['help', 'config'], { timeoutMs: 10000 });
   });
 
   it('probes auth with the verified prompt invocation', async () => {
@@ -52,7 +58,7 @@ describe('CopilotAdapter', () => {
       '--output-format',
       'json',
       '--no-custom-instructions'
-    ]);
+    ], { timeoutMs: 30000 });
   });
 
   it('maps prompt auth failures into a reauth state', async () => {
@@ -65,15 +71,29 @@ describe('CopilotAdapter', () => {
     await expect(adapter.probeAuth()).resolves.toBe('reauth-required');
   });
 
-  it('returns raw prompt output for higher layers to adapt', async () => {
-    const runCommand = vi.fn().mockResolvedValue({
-      exitCode: 0,
-      stdout: '{"type":"assistant","message":"Hello from Copilot"}',
+  it('maps prompt timeouts into a safe checking state', async () => {
+    const runCommand = vi.fn().mockRejectedValue({
+      code: 'ETIMEDOUT',
+      message: 'Command timed out',
       stderr: ''
     });
     const adapter = new CopilotAdapter({ runCommand });
 
-    await expect(adapter.runPrompt('gpt-5.4', 'Summarize the drawing.')).resolves.toContain('Hello from Copilot');
+    await expect(adapter.probeAuth()).resolves.toBe('checking');
+  });
+
+  it('extracts final assistant text from Copilot JSONL output', async () => {
+    const runCommand = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stdout: [
+        '{"type":"assistant.message_delta","delta":{"text":"Hello "}}',
+        '{"type":"assistant.message","message":{"content":[{"type":"output_text","text":"Hello from Copilot"}]}}'
+      ].join('\n'),
+      stderr: ''
+    });
+    const adapter = new CopilotAdapter({ runCommand });
+
+    await expect(adapter.runPrompt('gpt-5.4', 'Summarize the drawing.')).resolves.toBe('Hello from Copilot');
     expect(runCommand).toHaveBeenCalledWith([
       '--model',
       'gpt-5.4',
@@ -83,6 +103,20 @@ describe('CopilotAdapter', () => {
       '--output-format',
       'json',
       '--no-custom-instructions'
-    ]);
+    ], { timeoutMs: 30000 });
+  });
+
+  it('falls back to accumulated assistant deltas when no final message is present', async () => {
+    const runCommand = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stdout: [
+        '{"type":"assistant.message_delta","delta":{"text":"Hello"}}',
+        '{"type":"assistant.message_delta","delta":{"text":" from Copilot"}}'
+      ].join('\n'),
+      stderr: ''
+    });
+    const adapter = new CopilotAdapter({ runCommand });
+
+    await expect(adapter.runPrompt('gpt-5.4', 'Summarize the drawing.')).resolves.toBe('Hello from Copilot');
   });
 });

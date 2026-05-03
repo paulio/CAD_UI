@@ -26,7 +26,7 @@ function createCopilotAdapterStub() {
   return {
     listModels: vi.fn().mockResolvedValue(['gpt-5.4', 'gpt-5.4-mini']),
     probeAuth: vi.fn().mockResolvedValue('ready'),
-    runPrompt: vi.fn().mockResolvedValue('{"type":"assistant","message":"ok"}')
+    runPrompt: vi.fn().mockResolvedValue('ok')
   };
 }
 
@@ -162,5 +162,93 @@ describe('registerIpc', () => {
     await expect(readFile(`${dirname(corruptedSettingsFilePath)}/${quarantinedFile}`, 'utf8')).resolves.toBe('{invalid json');
 
     await rm(dirname(corruptedSettingsFilePath), { force: true, recursive: true });
+  });
+
+  it('reconciles a stale selected model during bootstrap', async () => {
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: 'stale-model',
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      createCopilotAdapterStub()
+    );
+
+    const loadBootstrap = handlers.get(ipcChannels.loadBootstrap);
+    const bootstrap = await loadBootstrap?.({}, undefined);
+
+    expect(bootstrap).toEqual({
+      authState: 'ready',
+      models: ['gpt-5.4', 'gpt-5.4-mini'],
+      settings: {
+        selectedModel: 'gpt-5.4',
+        recentDrawings: [],
+        lastDrawingPath: null,
+        windowBounds: null
+      }
+    });
+  });
+
+  it('uses checking instead of cli-missing when auth probing fails unexpectedly', async () => {
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.probeAuth.mockRejectedValue(new Error('timed out'));
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const loadBootstrap = handlers.get(ipcChannels.loadBootstrap);
+    const bootstrap = await loadBootstrap?.({}, undefined);
+
+    expect(bootstrap).toMatchObject({
+      authState: 'checking'
+    });
+  });
+
+  it('returns a controlled prompt error for non-auth CLI failures', async () => {
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.runPrompt.mockRejectedValue({
+      code: 'ETIMEDOUT',
+      message: 'Command timed out',
+      stderr: ''
+    });
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const sendPrompt = handlers.get(ipcChannels.sendPrompt);
+    const response = await sendPrompt?.({}, {
+      model: 'gpt-5.4',
+      prompt: 'Summarize the drawing.',
+      drawingPath: null,
+      selectedEntityIds: []
+    });
+
+    expect(response).toMatchObject({
+      text: 'Copilot CLI prompt failed.'
+    });
   });
 });

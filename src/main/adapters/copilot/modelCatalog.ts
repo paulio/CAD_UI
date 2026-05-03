@@ -7,6 +7,11 @@ export type ProbeResult = {
   errorCode?: string;
 };
 
+const AUTH_FAILURE_PATTERN =
+  /please run copilot login|copilot login|log[ -]?in|authenticate|authentication|credential|token|sign[ -]?in/i;
+const CLI_MISSING_PATTERN =
+  /not recognized as an internal or external command|command not found|enoent|cannot find|no such file or directory/i;
+
 export function parseModelCatalog(helpText: string): string[] {
   const models: string[] = [];
   const seen = new Set<string>();
@@ -60,19 +65,23 @@ export function parseProbeResult(result: ProbeResult): AuthState {
     return 'ready';
   }
 
+  return classifyCopilotFailure(result);
+}
+
+export function classifyCopilotFailure(result: ProbeResult): AuthState {
   if (typeof result.errorCode === 'string' && result.errorCode.toUpperCase() === 'ENOENT') {
     return 'cli-missing';
   }
 
   const diagnostic = [result.stderr, result.stdout ?? ''].join('\n');
 
-  if (/please run copilot login|copilot login|log[ -]?in|authenticate|authentication|credential|token|sign[ -]?in/i.test(diagnostic)) {
+  if (AUTH_FAILURE_PATTERN.test(diagnostic)) {
     return 'reauth-required';
   }
 
-  if (/not recognized as an internal or external command|command not found|enoent|cannot find/i.test(diagnostic)) {
+  if (CLI_MISSING_PATTERN.test(diagnostic)) {
     return 'cli-missing';
   }
 
-  return 'cli-missing';
+  return 'checking';
 }

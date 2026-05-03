@@ -9,6 +9,7 @@ import type {
 } from '../../shared/contracts';
 import { ipcChannels } from '../../shared/contracts';
 import { CopilotAdapter } from '../adapters/copilot/copilotAdapter';
+import { classifyCopilotFailure } from '../adapters/copilot/modelCatalog';
 import { SettingsStore } from '../services/settingsStore';
 
 type CopilotAdapterLike = Pick<CopilotAdapter, 'listModels' | 'probeAuth' | 'runPrompt'>;
@@ -100,11 +101,12 @@ export function registerIpc(
       copilotAdapter.listModels(),
       copilotAdapter.probeAuth()
     ]);
+    const models = modelsResult.status === 'fulfilled' ? modelsResult.value : [];
 
     return {
-      authState: authResult.status === 'fulfilled' ? authResult.value : 'cli-missing',
-      models: modelsResult.status === 'fulfilled' ? modelsResult.value : [],
-      settings
+      authState: authResult.status === 'fulfilled' ? authResult.value : 'checking',
+      models,
+      settings: reconcileBootstrapSettings(settings, models)
     };
   });
 
@@ -153,7 +155,7 @@ export function registerIpc(
 }
 
 async function resolvePromptText(
-  copilotAdapter: CopilotAdapter,
+  copilotAdapter: CopilotAdapterLike,
   request: SendPromptRequest,
   prompt: string
 ): Promise<string> {
@@ -175,8 +177,9 @@ async function resolvePromptText(
 function describePromptFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : '';
   const stderr = extractStringProperty(error, 'stderr');
+  const stdout = extractStringProperty(error, 'stdout');
   const errorCode = extractStringProperty(error, 'code');
-  const authState = classifyPromptFailure({ message, stderr, errorCode });
+  const authState = classifyPromptFailure({ message, stderr, stdout, errorCode });
 
   if (authState === 'reauth-required') {
     return 'Copilot CLI is not authenticated. Run copilot login and try again.';
@@ -189,18 +192,28 @@ function describePromptFailure(error: unknown): string {
   return 'Copilot CLI prompt failed.';
 }
 
-function classifyPromptFailure(input: { message: string; stderr: string; errorCode: string }): AuthState {
-  const diagnostic = [input.message, input.stderr].join('\n');
+function classifyPromptFailure(input: { message: string; stderr: string; stdout: string; errorCode: string }): AuthState {
+  return classifyCopilotFailure({
+    exitCode: null,
+    stderr: [input.message, input.stderr].filter((value) => value.length > 0).join('\n'),
+    stdout: input.stdout,
+    errorCode: input.errorCode
+  });
+}
 
-  if (input.errorCode.toUpperCase() === 'ENOENT') {
-    return 'cli-missing';
+function reconcileBootstrapSettings(settings: AppSettings, models: string[]): AppSettings {
+  if (settings.selectedModel === null) {
+    return settings;
   }
 
-  if (/copilot login|log[ -]?in|authenticate|authentication|credential|token|sign[ -]?in/i.test(diagnostic)) {
-    return 'reauth-required';
+  if (models.includes(settings.selectedModel)) {
+    return settings;
   }
 
-  return 'cli-missing';
+  return {
+    ...settings,
+    selectedModel: models[0] ?? null
+  };
 }
 
 function extractStringProperty(value: unknown, key: string): string {
