@@ -12,6 +12,7 @@
     "test:e2e": "playwright test --pass-with-no-tests"
   },
   "dependencies": {
+    "dxf-parser": "^1.1.2",
     "electron": "^37.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
@@ -20,10 +21,10 @@
     "@playwright/test": "^1.54.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
-    "@vitejs/plugin-react": "^4.4.1",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
     "electron-vite": "^3.1.0",
     "jsdom": "^26.1.0",
     "typescript": "^5.8.3",

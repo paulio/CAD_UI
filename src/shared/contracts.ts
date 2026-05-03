@@ -1,3 +1,5 @@
+import type { ViewerScene } from './viewerTypes';
+
 export type WindowBounds = {
   width: number;
   height: number;
@@ -16,16 +18,18 @@ export type AuthState = 'checking' | 'ready' | 'reauth-required' | 'cli-missing'
 
 export type HighlightMode = 'focus' | 'pulse' | 'outline' | 'zoomTo' | 'none';
 
+export type EntityHandle = string;
+
 export type AssistantEvidence = {
   featureId: string;
-  handle: string;
+  handle: EntityHandle;
   source: string;
 };
 
 export type AssistantEnvelope = {
   text: string;
   featureIds: string[];
-  entityHandles: string[];
+  entityHandles: EntityHandle[];
   highlightMode: HighlightMode;
   evidence: AssistantEvidence[];
 };
@@ -57,6 +61,7 @@ export type OpenDrawingResult = {
   canceled: boolean;
   filePath: string | null;
   session: DrawingSession | null;
+  scene?: ViewerScene | null;
   error: string | null;
   diagnostics: DiagnosticEntry[];
 };
