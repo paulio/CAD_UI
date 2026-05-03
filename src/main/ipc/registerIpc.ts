@@ -13,6 +13,7 @@ import { ipcChannels } from '../../shared/contracts';
 import { DrawingSessionService } from '../adapters/cadAi/drawingSessionService';
 import { CopilotAdapter } from '../adapters/copilot/copilotAdapter';
 import { classifyCopilotFailure } from '../adapters/copilot/modelCatalog';
+import { buildSceneFromDxf } from '../adapters/viewer/dxfSceneBuilder';
 import { DiagnosticsStore } from '../services/diagnosticsStore';
 import { SettingsStore } from '../services/settingsStore';
 
@@ -162,6 +163,7 @@ export function registerIpc(
       }
 
       const session = await getDrawingSessionService().openDrawing(filePath);
+      const scene = session.dxfPath === null ? null : await buildSceneSafely(session.dxfPath, diagnosticsStore);
       const settings = await settingsStore.load();
       const recentDrawings = [filePath, ...settings.recentDrawings.filter((entry) => entry !== filePath)].slice(0, 10);
 
@@ -175,7 +177,8 @@ export function registerIpc(
         canceled: false,
         filePath,
         session,
-        error: null,
+        scene,
+        error: scene === null && session.dxfPath !== null ? `Failed to build a viewer scene for ${session.dxfPath}.` : null,
         diagnostics: diagnosticsStore.list()
       };
     } catch (error) {
@@ -284,4 +287,20 @@ function extractStringProperty(value: unknown, key: string): string {
 
   const record = value as Record<string, unknown>;
   return typeof record[key] === 'string' ? record[key] : '';
+}
+
+async function buildSceneSafely(dxfPath: string, diagnosticsStore: DiagnosticsStore) {
+  try {
+    return await buildSceneFromDxf(dxfPath);
+  } catch (error) {
+    diagnosticsStore.add({
+      timestamp: new Date().toISOString(),
+      source: 'viewer',
+      level: 'error',
+      message: `Failed to build viewer scene for ${dxfPath}`,
+      detail: error instanceof Error ? error.message : String(error)
+    });
+
+    return null;
+  }
 }

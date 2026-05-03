@@ -352,6 +352,62 @@ describe('registerIpc', () => {
     });
   });
 
+  it('returns a viewer scene and updates recent drawings when a drawing opens successfully', async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+      canceled: false,
+      filePaths: ['tests/fixtures/site.dxf']
+    } as never);
+
+    const save = vi.fn().mockResolvedValue(undefined);
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: 'gpt-5.4',
+          recentDrawings: ['older.dwg'],
+          lastDrawingPath: null,
+          windowBounds: null
+        }),
+        save
+      } as never,
+      createCopilotAdapterStub(),
+      {
+        openDrawing: vi.fn().mockResolvedValue({
+          sourcePath: 'tests/fixtures/site.dxf',
+          dxfPath: 'tests/fixtures/site.dxf',
+          cachePath: 'tests/fixtures/.cadqcache',
+          openedAt: '2026-05-03T12:00:00.000Z'
+        })
+      } as never
+    );
+
+    const openDrawing = handlers.get(ipcChannels.openDrawing);
+    const result = await openDrawing?.({}, undefined);
+
+    expect(result).toMatchObject({
+      canceled: false,
+      filePath: 'tests/fixtures/site.dxf',
+      session: {
+        sourcePath: 'tests/fixtures/site.dxf',
+        dxfPath: 'tests/fixtures/site.dxf',
+        cachePath: 'tests/fixtures/.cadqcache'
+      },
+      error: null
+    });
+    expect(result?.scene).toMatchObject({
+      drawingPath: expect.stringContaining('tests\\fixtures\\site.dxf'),
+      handleIndex: expect.objectContaining({
+        B0: expect.any(String)
+      })
+    });
+    expect(save).toHaveBeenCalledWith({
+      selectedModel: 'gpt-5.4',
+      recentDrawings: ['tests/fixtures/site.dxf', 'older.dwg'],
+      lastDrawingPath: 'tests/fixtures/site.dxf',
+      windowBounds: null
+    });
+  });
+
   it('returns cancellation without reporting an error', async () => {
     vi.mocked(dialog.showOpenDialog).mockResolvedValue({
       canceled: true,
