@@ -4,15 +4,19 @@ import type {
   AssistantEnvelope,
   BootstrapData,
   AuthState,
+  OpenDrawingResult,
   WindowBounds,
   SendPromptRequest
 } from '../../shared/contracts';
 import { ipcChannels } from '../../shared/contracts';
+import { DrawingSessionService } from '../adapters/cadAi/drawingSessionService';
 import { CopilotAdapter } from '../adapters/copilot/copilotAdapter';
 import { classifyCopilotFailure } from '../adapters/copilot/modelCatalog';
+import { DiagnosticsStore } from '../services/diagnosticsStore';
 import { SettingsStore } from '../services/settingsStore';
 
 type CopilotAdapterLike = Pick<CopilotAdapter, 'listModels' | 'probeAuth' | 'runPrompt'>;
+type DrawingSessionServiceLike = Pick<DrawingSessionService, 'openDrawing'>;
 
 function registerHandler<TReturn>(
   channel: string,
@@ -86,8 +90,21 @@ function parseSendPromptRequest(payload: unknown): SendPromptRequest {
 
 export function registerIpc(
   settingsStore: SettingsStore,
-  copilotAdapter: CopilotAdapterLike = new CopilotAdapter()
+  copilotAdapter: CopilotAdapterLike = new CopilotAdapter(),
+  drawingSessionService?: DrawingSessionServiceLike
 ): void {
+  const diagnosticsStore = new DiagnosticsStore();
+  let cachedDrawingSessionService = drawingSessionService;
+
+  function getDrawingSessionService(): DrawingSessionServiceLike {
+    if (cachedDrawingSessionService === undefined) {
+      cachedDrawingSessionService = new DrawingSessionService({
+        diagnostics: diagnosticsStore
+      });
+    }
+
+    return cachedDrawingSessionService;
+  }
 
   registerHandler<AppSettings>(ipcChannels.loadSettings, () => settingsStore.load());
 
@@ -115,7 +132,7 @@ export function registerIpc(
     };
   });
 
-  registerHandler(ipcChannels.openDrawing, async () => {
+  registerHandler<OpenDrawingResult>(ipcChannels.openDrawing, async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
@@ -128,20 +145,28 @@ export function registerIpc(
 
     const filePath = result.canceled ? null : result.filePaths[0] ?? null;
 
-    if (filePath !== null) {
-      const settings = await settingsStore.load();
-      const recentDrawings = [filePath, ...settings.recentDrawings.filter((entry) => entry !== filePath)].slice(0, 10);
-
-      await settingsStore.save({
-        ...settings,
-        recentDrawings,
-        lastDrawingPath: filePath
-      });
+    if (filePath === null) {
+      return {
+        canceled: result.canceled,
+        filePath: null,
+        session: null
+      };
     }
 
+    const session = await getDrawingSessionService().openDrawing(filePath);
+    const settings = await settingsStore.load();
+    const recentDrawings = [filePath, ...settings.recentDrawings.filter((entry) => entry !== filePath)].slice(0, 10);
+
+    await settingsStore.save({
+      ...settings,
+      recentDrawings,
+      lastDrawingPath: filePath
+    });
+
     return {
-      canceled: result.canceled,
-      filePath
+      canceled: false,
+      filePath,
+      session
     };
   });
 

@@ -36,9 +36,27 @@ export type BootstrapData = {
   settings: AppSettings;
 };
 
+export type DiagnosticLevel = 'info' | 'error';
+
+export type DiagnosticEntry = {
+  timestamp: string;
+  source: string;
+  level: DiagnosticLevel;
+  message: string;
+  detail: string | null;
+};
+
+export type DrawingSession = {
+  sourcePath: string;
+  dxfPath: string | null;
+  cachePath: string;
+  openedAt: string;
+};
+
 export type OpenDrawingResult = {
   canceled: boolean;
   filePath: string | null;
+  session: DrawingSession | null;
 };
 
 export type SendPromptRequest = {
