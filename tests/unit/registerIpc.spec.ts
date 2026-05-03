@@ -165,6 +165,8 @@ describe('registerIpc', () => {
   });
 
   it('reconciles a stale selected model during bootstrap', async () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+
     registerIpc(
       {
         load: vi.fn().mockResolvedValue({
@@ -173,7 +175,7 @@ describe('registerIpc', () => {
           lastDrawingPath: null,
           windowBounds: null
         }),
-        save: vi.fn()
+        save
       } as never,
       createCopilotAdapterStub()
     );
@@ -190,6 +192,12 @@ describe('registerIpc', () => {
         lastDrawingPath: null,
         windowBounds: null
       }
+    });
+    expect(save).toHaveBeenCalledWith({
+      selectedModel: 'gpt-5.4',
+      recentDrawings: [],
+      lastDrawingPath: null,
+      windowBounds: null
     });
   });
 

@@ -102,11 +102,16 @@ export function registerIpc(
       copilotAdapter.probeAuth()
     ]);
     const models = modelsResult.status === 'fulfilled' ? modelsResult.value : [];
+    const reconciledSettings = reconcileBootstrapSettings(settings, models);
+
+    if (reconciledSettings !== settings) {
+      await settingsStore.save(reconciledSettings);
+    }
 
     return {
       authState: authResult.status === 'fulfilled' ? authResult.value : 'checking',
       models,
-      settings: reconcileBootstrapSettings(settings, models)
+      settings: reconciledSettings
     };
   });
 
