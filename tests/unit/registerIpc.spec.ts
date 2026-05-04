@@ -531,6 +531,83 @@ describe('registerIpc', () => {
     });
   });
 
+  it('points the model at the CAD_AI cadq CLI and includes the cache path plus chat history in the prompt', async () => {
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.runPrompt.mockResolvedValue('Counted 3 trees via cadq.');
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null,
+          lastKnownModels: []
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const sendPrompt = handlers.get(ipcChannels.sendPrompt);
+    await sendPrompt?.({}, {
+      model: 'gpt-5.4',
+      prompt: 'How many trees?',
+      drawingPath: 'D:/drawings/site.dwg',
+      cachePath: 'D:/drawings/site.dwg.cadqcache',
+      selectedEntityIds: [],
+      selectedEntityHandles: [],
+      chatHistory: [
+        { role: 'user', text: 'What area of trees is there?' },
+        { role: 'assistant', text: 'About 42 m^2.' }
+      ]
+    });
+
+    expect(copilotAdapter.runPrompt).toHaveBeenCalledTimes(1);
+    const promptText = copilotAdapter.runPrompt.mock.calls[0][1] as string;
+    expect(promptText).toContain('cadq');
+    expect(promptText).toContain('D:/drawings/site.dwg.cadqcache');
+    expect(promptText).toContain('D:/drawings/site.dwg');
+    expect(promptText).toContain('User: What area of trees is there?');
+    expect(promptText).toContain('Assistant: About 42 m^2.');
+    expect(promptText).toContain('How many trees?');
+    expect(promptText).not.toContain('Drawing summary:');
+  });
+
+  it('omits the conversation block when no chat history exists yet', async () => {
+    const copilotAdapter = createCopilotAdapterStub();
+    copilotAdapter.runPrompt.mockResolvedValue('No history yet.');
+
+    registerIpc(
+      {
+        load: vi.fn().mockResolvedValue({
+          selectedModel: null,
+          recentDrawings: [],
+          lastDrawingPath: null,
+          windowBounds: null,
+          lastKnownModels: []
+        }),
+        save: vi.fn()
+      } as never,
+      copilotAdapter
+    );
+
+    const sendPrompt = handlers.get(ipcChannels.sendPrompt);
+    await sendPrompt?.({}, {
+      model: 'gpt-5.4',
+      prompt: 'How many trees?',
+      drawingPath: 'D:/drawings/site.dwg',
+      cachePath: 'D:/drawings/site.dwg.cadqcache',
+      selectedEntityIds: [],
+      selectedEntityHandles: [],
+      chatHistory: []
+    });
+
+    const promptText = copilotAdapter.runPrompt.mock.calls[0][1] as string;
+    expect(promptText).not.toContain('Conversation so far');
+    expect(promptText).toContain('How many trees?');
+  });
+
   it('exposes a typed diagnostics list handler for renderer consumers', async () => {
     registerIpc(
       {

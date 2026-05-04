@@ -255,12 +255,18 @@ export function useAppStore(): AppStore {
 
     try {
       const selectedEntityHandles = state.highlightedEntityHandles;
+      const chatHistory = state.messages.map((message) => ({
+        role: message.role,
+        text: message.text
+      }));
       const response = await window.cadUiApi.sendPrompt({
         model: state.selectedModel,
         prompt,
         drawingPath: state.drawingSession?.sourcePath ?? null,
+        cachePath: state.drawingSession?.cachePath ?? null,
         selectedEntityIds: state.highlightedEntityIds,
-        selectedEntityHandles
+        selectedEntityHandles,
+        chatHistory
       });
       const diagnostics = await loadDiagnosticsSafely();
 

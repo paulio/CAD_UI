@@ -67,12 +67,19 @@ export type OpenDrawingResult = {
   diagnostics: DiagnosticEntry[];
 };
 
+export type ChatHistoryTurn = {
+  role: 'user' | 'assistant';
+  text: string;
+};
+
 export type SendPromptRequest = {
   model: ModelId | null;
   prompt: string;
   drawingPath: string | null;
+  cachePath: string | null;
   selectedEntityIds: string[];
   selectedEntityHandles?: EntityHandle[];
+  chatHistory: ChatHistoryTurn[];
 };
 
 export interface CadUiApi {

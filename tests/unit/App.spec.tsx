@@ -159,8 +159,10 @@ describe('App shell', () => {
         model: 'gpt-5.4',
         prompt: 'What is next to the frontage line?',
         drawingPath: 'D:/drawings/site.dxf',
+        cachePath: 'D:/drawings/.cadqcache',
         selectedEntityIds: [],
-        selectedEntityHandles: []
+        selectedEntityHandles: [],
+        chatHistory: []
       });
     });
 
@@ -181,8 +183,13 @@ describe('App shell', () => {
         model: 'gpt-5.4',
         prompt: 'Keep the same geometry in focus.',
         drawingPath: 'D:/drawings/site.dxf',
+        cachePath: 'D:/drawings/.cadqcache',
         selectedEntityIds: ['entity-tree-1'],
-        selectedEntityHandles: ['B0']
+        selectedEntityHandles: ['B0'],
+        chatHistory: [
+          { role: 'user', text: 'What is next to the frontage line?' },
+          { role: 'assistant', text: 'The highlighted tree is adjacent to the frontage line.' }
+        ]
       });
     });
 

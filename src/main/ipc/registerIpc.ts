@@ -79,8 +79,10 @@ function parseSendPromptRequest(payload: unknown): SendPromptRequest {
     (request.model !== null && typeof request.model !== 'string') ||
     typeof request.prompt !== 'string' ||
     (request.drawingPath !== null && typeof request.drawingPath !== 'string') ||
+    (request.cachePath !== undefined && request.cachePath !== null && typeof request.cachePath !== 'string') ||
     !isStringArray(request.selectedEntityIds) ||
-    (request.selectedEntityHandles !== undefined && !isStringArray(request.selectedEntityHandles))
+    (request.selectedEntityHandles !== undefined && !isStringArray(request.selectedEntityHandles)) ||
+    (request.chatHistory !== undefined && !isChatHistory(request.chatHistory))
   ) {
     throw new Error('Invalid prompt request payload.');
   }
@@ -89,9 +91,23 @@ function parseSendPromptRequest(payload: unknown): SendPromptRequest {
     model: request.model,
     prompt: request.prompt,
     drawingPath: request.drawingPath,
+    cachePath: typeof request.cachePath === 'string' ? request.cachePath : null,
     selectedEntityIds: request.selectedEntityIds,
-    selectedEntityHandles: request.selectedEntityHandles
+    selectedEntityHandles: request.selectedEntityHandles,
+    chatHistory: Array.isArray(request.chatHistory) ? (request.chatHistory as SendPromptRequest['chatHistory']) : []
   };
+}
+
+function isChatHistory(value: unknown): boolean {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  return value.every((entry) => {
+    if (typeof entry !== 'object' || entry === null) return false;
+    const turn = entry as Record<string, unknown>;
+    return (turn.role === 'user' || turn.role === 'assistant') && typeof turn.text === 'string';
+  });
 }
 
 function parseBootstrapAuthOverride(value: string | undefined): AuthState | null {
@@ -298,16 +314,60 @@ async function resolvePromptEnvelope(
 function buildPromptRequest(prompt: string, request: SendPromptRequest): string {
   const selectedEntityIds = request.selectedEntityIds.length > 0 ? request.selectedEntityIds.join(', ') : 'none';
   const selectedEntityHandles = request.selectedEntityHandles?.length ? request.selectedEntityHandles.join(', ') : 'none';
+  const cachePath = request.cachePath ?? 'not available';
+  const drawingPath = request.drawingPath ?? 'not available';
+  const history = formatChatHistory(request.chatHistory);
 
-  return [
-    prompt,
+  const lines = [
+    'You are the chat layer of CAD_UI, a desktop app for inspecting CAD drawings.',
+    'CAD_AI (the sister project) has already loaded and indexed the drawing the user is looking at.',
+    'You answer drawing questions by invoking the `cadq` shell command, which is the CAD_AI semantic query CLI.',
     '',
-    'Return either a normal text answer or JSON with this schema:',
-    '{"text":"string","featureIds":["semantic-feature-id"],"entityHandles":["handle"],"highlightMode":"focus|pulse|outline|zoomTo|none","evidence":[{"featureId":"semantic-feature-id","handle":"handle","source":"string"}]}',
-    `Current selected entity ids: ${selectedEntityIds}`,
-    `Current selected entity handles: ${selectedEntityHandles}`,
-    'FeatureIds are semantic CAD_AI feature identifiers. Entity handles identify concrete drawing geometry. Do not copy renderer entity ids into featureIds.'
-  ].join('\n');
+    'The active drawing context (already loaded by CAD_AI):',
+    `  Source drawing: ${drawingPath}`,
+    `  Cache file:     ${cachePath}`,
+    '',
+    'Run `cadq --help` to discover commands. Always pass `--cache <cache-file>` and `--format json` so output is machine-readable.',
+    'Useful subcommands include: info, features list, area, boundary, nearest, garden, trees, layers, label, topology, elevation, plan, explain.',
+    'For unfamiliar questions you can run `cadq plan "<question>"` first to get a suggested tool sequence, then execute the suggested commands.',
+    'Never invent feature ids, handles, or numeric values — every fact about the drawing must come from a `cadq` invocation in this turn.',
+    '',
+    'Viewer context for this turn:',
+    `  Currently selected entity ids: ${selectedEntityIds}`,
+    `  Currently selected entity handles: ${selectedEntityHandles}`,
+    ''
+  ];
+
+  if (history.length > 0) {
+    lines.push('Conversation so far (oldest first):');
+    lines.push(history);
+    lines.push('');
+  }
+
+  lines.push('Latest user message:');
+  lines.push(prompt);
+  lines.push('');
+  lines.push('Reply with either a natural-language answer or JSON with this schema:');
+  lines.push('{"text":"string","featureIds":["semantic-feature-id"],"entityHandles":["handle"],"highlightMode":"focus|pulse|outline|zoomTo|none","evidence":[{"featureId":"semantic-feature-id","handle":"handle","source":"string"}]}');
+  lines.push('When citing geometry, use stable entity handles taken from `cadq` output. Feature ids are CAD_AI semantic ids, not renderer entity ids.');
+
+  return lines.join('\n');
+}
+
+function formatChatHistory(history: SendPromptRequest['chatHistory']): string {
+  if (!Array.isArray(history) || history.length === 0) {
+    return '';
+  }
+
+  // Cap to the last 10 turns so a long conversation doesn't blow the prompt budget.
+  const recent = history.slice(-10);
+
+  return recent
+    .map((turn) => {
+      const speaker = turn.role === 'user' ? 'User' : 'Assistant';
+      return `  ${speaker}: ${turn.text.trim()}`;
+    })
+    .join('\n');
 }
 
 function parseAssistantEnvelope(responseText: string, request: SendPromptRequest): AssistantEnvelope {
