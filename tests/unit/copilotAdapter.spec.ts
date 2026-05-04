@@ -58,7 +58,7 @@ describe('CopilotAdapter', () => {
       '--output-format',
       'json',
       '--no-custom-instructions'
-    ], { timeoutMs: 30000 });
+    ], { timeoutMs: 180000 });
   });
 
   it('maps prompt auth failures into a reauth state', async () => {
@@ -103,7 +103,7 @@ describe('CopilotAdapter', () => {
       '--output-format',
       'json',
       '--no-custom-instructions'
-    ], { timeoutMs: 30000 });
+    ], { timeoutMs: 180000 });
   });
 
   it('falls back to accumulated assistant deltas when no final message is present', async () => {

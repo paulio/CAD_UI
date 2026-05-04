@@ -478,6 +478,11 @@ function describePromptFailure(error: unknown): string {
   const stderr = extractStringProperty(error, 'stderr');
   const stdout = extractStringProperty(error, 'stdout');
   const errorCode = extractStringProperty(error, 'code');
+
+  if (isTimeoutFailure(error, errorCode, message)) {
+    return 'Copilot CLI did not respond in time. Try again or simplify the prompt.';
+  }
+
   const authState = classifyPromptFailure({ message, stderr, stdout, errorCode });
 
   if (authState === 'reauth-required') {
@@ -489,6 +494,17 @@ function describePromptFailure(error: unknown): string {
   }
 
   return 'Copilot CLI prompt failed.';
+}
+
+function isTimeoutFailure(error: unknown, errorCode: string, message: string): boolean {
+  if (errorCode === 'ETIMEDOUT') return true;
+  if (typeof message === 'string' && /timed out|killed/i.test(message)) return true;
+  if (typeof error === 'object' && error !== null) {
+    const failure = error as { killed?: boolean; signal?: string };
+    if (failure.killed === true) return true;
+    if (failure.signal === 'SIGTERM') return true;
+  }
+  return false;
 }
 
 function classifyPromptFailure(input: { message: string; stderr: string; stdout: string; errorCode: string }): AuthState {

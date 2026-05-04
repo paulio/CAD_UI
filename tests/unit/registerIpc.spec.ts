@@ -391,7 +391,7 @@ describe('registerIpc', () => {
     });
 
     expect(response).toMatchObject({
-      text: 'Copilot CLI prompt failed.'
+      text: 'Copilot CLI did not respond in time. Try again or simplify the prompt.'
     });
 
     const listDiagnostics = handlers.get(ipcChannels.listDiagnostics);

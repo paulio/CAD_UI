@@ -8,7 +8,7 @@ export type ProbeResult = {
 };
 
 const AUTH_FAILURE_PATTERN =
-  /please run copilot login|copilot login|log[ -]?in|authenticate|authentication|credential|token|sign[ -]?in/i;
+  /please run [`']?copilot login|run [`']?copilot login[`']? to (?:authenticate|sign[\s-]?in)|not authenticated|not signed[\s-]?in|401 unauthorized|authentication failed|authentication required|invalid (?:credentials|token|session)|expired (?:credentials|token|session)|sign[\s-]?in (?:required|expired)|please (?:re-?)?(?:authenticate|log[\s-]?in|sign[\s-]?in)/i;
 const CLI_MISSING_PATTERN =
   /not recognized as an internal or external command|command not found|enoent|cannot find|no such file or directory/i;
 
