@@ -337,12 +337,14 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
             }
 
             const isLocked = layer?.locked ?? false;
-            const isHighlighted = props.highlightedEntityIds.includes(entity.id);
-            const isSelected = props.selectedEntityId === entity.id;
             const onSelect = isLocked ? noopSelect : props.onSelectEntity;
 
-            return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, onSelect, isLocked);
+            // Render the entity with its natural appearance only.
+            // Selection and highlight are drawn as a separate overlay below so
+            // they cannot distort the entity geometry (especially text glyphs).
+            return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, false, false, onSelect, isLocked);
           })}
+          {renderSelectionOverlays(props.scene, bounds, props.highlightedEntityIds, props.selectedEntityId, activeCamera.zoom)}
         </svg>
         {marqueeRect !== null ? (
           <div
@@ -382,6 +384,66 @@ function computeLocalViewBox(
 }
 
 const noopSelect = (_id: string): void => undefined;
+
+function renderSelectionOverlays(
+  scene: ViewerScene,
+  sceneBounds: { minX: number; maxY: number },
+  highlightedEntityIds: string[],
+  selectedEntityId: string | null,
+  zoom: number
+) {
+  // Padding in screen pixels around the bounding box, converted to world units.
+  const padScreenPx = 6;
+  const padWorld = padScreenPx / Math.max(zoom, 1e-6);
+  // Minimum world-space size so a zero-area entity (text anchor, point) still
+  // produces a visible marker.
+  const minMarkerWorld = 12 / Math.max(zoom, 1e-6);
+
+  const overlays: JSX.Element[] = [];
+
+  for (const entity of scene.entities) {
+    const isHighlighted = highlightedEntityIds.includes(entity.id);
+    const isSelected = selectedEntityId === entity.id;
+    if (!isHighlighted && !isSelected) {
+      continue;
+    }
+
+    const bounds = entity.bounds;
+    if (bounds === null) {
+      continue;
+    }
+
+    const rawWidth = bounds.maxX - bounds.minX;
+    const rawHeight = bounds.maxY - bounds.minY;
+    const width = Math.max(rawWidth, minMarkerWorld) + padWorld * 2;
+    const height = Math.max(rawHeight, minMarkerWorld) + padWorld * 2;
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    const x = centerX - width / 2 - sceneBounds.minX;
+    const y = sceneBounds.maxY - (centerY + height / 2);
+    // Selection (teal) takes precedence over highlight (orange) so a clicked
+    // entity remains clearly distinguished from AI-driven focus rings.
+    const className = isSelected
+      ? 'drawing-overlay drawing-overlay--selected'
+      : 'drawing-overlay drawing-overlay--highlighted';
+
+    overlays.push(
+      <rect
+        key={`overlay-${entity.id}`}
+        className={className}
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={padWorld}
+        ry={padWorld}
+        pointerEvents="none"
+      />
+    );
+  }
+
+  return overlays;
+}
 
 function renderEntity(
   entity: ViewerEntity,

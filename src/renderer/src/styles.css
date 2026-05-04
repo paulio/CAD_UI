@@ -383,40 +383,28 @@ textarea {
   cursor: pointer;
 }
 
-.drawing-entity--highlighted {
+.drawing-entity--highlighted,
+.drawing-entity--selected {
+  /* Legacy classes intentionally left as a no-op. Selection and AI-highlight
+     are drawn as bounding-box overlays so they cannot distort the entity's
+     own geometry (especially text glyphs at high zoom). */
+}
+
+.drawing-overlay {
+  fill: none;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.drawing-overlay--highlighted {
   stroke: #c85f2e;
   stroke-width: 2;
+  stroke-dasharray: 4 3;
 }
 
-.drawing-entity--selected {
+.drawing-overlay--selected {
   stroke: #0f6c70;
   stroke-width: 2.5;
-}
-
-/* Text entities have no stroke by default; selection/highlight should swap the
-   fill colour instead of overriding it with `none` (which collapses to glyph
-   outlines stroked at the entity stroke-width and looks like a giant blob). */
-.drawing-entity--text.drawing-entity--highlighted {
-  stroke: none;
-  fill: #c85f2e;
-  font-weight: 700;
-}
-
-.drawing-entity--text.drawing-entity--selected {
-  stroke: none;
-  fill: #0f6c70;
-  font-weight: 700;
-}
-
-/* Survey points are filled markers; use a colour swap on selection. */
-.drawing-entity--point.drawing-entity--highlighted {
-  stroke: none;
-  fill: #c85f2e;
-}
-
-.drawing-entity--point.drawing-entity--selected {
-  stroke: none;
-  fill: #0f6c70;
 }
 
 .drawing-entity--locked {
