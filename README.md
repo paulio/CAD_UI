@@ -58,7 +58,7 @@ npm run test:e2e           # builds, then runs Playwright Electron E2E
 
 | Action | Input |
 |---|---|
-| Pan | Middle-mouse drag, or **Shift** + left-mouse drag on empty canvas |
+| Pan | Right-mouse drag, or middle-mouse drag, or **Shift** + left-mouse drag |
 | Zoom | Mouse wheel (zooms toward the cursor) |
 | Fit all | Toolbar **Fit all** button |
 | Fit selection | Toolbar **Fit selection** (active when an entity or AI highlight is selected) |
