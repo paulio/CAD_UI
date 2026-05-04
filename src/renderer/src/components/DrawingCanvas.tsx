@@ -1,5 +1,15 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { HighlightMode } from '../../../shared/contracts';
 import type { Point2D, ViewerEntity, ViewerPolylineEntity, ViewerPolylineVertex, ViewerScene } from '../../../shared/viewerTypes';
+import {
+  applyPan,
+  applyWheelZoom,
+  boundsForEntityIds,
+  fitBounds,
+  initialCamera,
+  type CameraState,
+  type ViewportSize
+} from '../viewer/cameraState';
 
 type DrawingCanvasProps = {
   scene: ViewerScene | null;
@@ -11,8 +21,112 @@ type DrawingCanvasProps = {
   onToggleSurveyPoints: (next: boolean) => void;
 };
 
+const FALLBACK_VIEWPORT: ViewportSize = { width: 1, height: 1 };
+
 export function DrawingCanvas(props: DrawingCanvasProps) {
-  if (props.scene === null || props.scene.bounds === null) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [viewport, setViewport] = useState<ViewportSize>(FALLBACK_VIEWPORT);
+  const [camera, setCamera] = useState<CameraState | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  const sceneBounds = props.scene?.focusBounds ?? props.scene?.bounds ?? null;
+
+  useLayoutEffect(() => {
+    const node = containerRef.current;
+    if (node === null) {
+      return;
+    }
+
+    const updateViewport = () => {
+      const rect = node.getBoundingClientRect();
+      setViewport({ width: Math.max(rect.width, 1), height: Math.max(rect.height, 1) });
+    };
+
+    updateViewport();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateViewport);
+      return () => window.removeEventListener('resize', updateViewport);
+    }
+
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (sceneBounds === null) {
+      setCamera(null);
+      return;
+    }
+
+    setCamera(initialCamera(sceneBounds, viewport));
+    // We intentionally only refit when the underlying scene bounds change, not viewport.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.scene?.drawingPath, sceneBounds?.minX, sceneBounds?.minY, sceneBounds?.maxX, sceneBounds?.maxY]);
+
+  const fitAll = useCallback(() => {
+    if (sceneBounds === null) return;
+    setCamera(fitBounds(sceneBounds, viewport, { marginRatio: 0.05 }));
+  }, [sceneBounds, viewport]);
+
+  const fitSelection = useCallback(() => {
+    if (props.scene === null) return;
+    const targetIds = props.selectedEntityId !== null ? [props.selectedEntityId] : props.highlightedEntityIds;
+    const selectionBounds = boundsForEntityIds(props.scene, targetIds);
+    if (selectionBounds === null) return;
+    setCamera(fitBounds(selectionBounds, viewport, { marginRatio: 0.25 }));
+  }, [props.scene, props.selectedEntityId, props.highlightedEntityIds, viewport]);
+
+  const onWheel = useCallback(
+    (event: React.WheelEvent<SVGSVGElement>) => {
+      if (camera === null || svgRef.current === null) return;
+      event.preventDefault();
+      const rect = svgRef.current.getBoundingClientRect();
+      const screenX = event.clientX - rect.left;
+      const screenY = event.clientY - rect.top;
+      setCamera((current) => (current === null ? current : applyWheelZoom(current, { screenX, screenY, deltaY: event.deltaY }, viewport)));
+    },
+    [camera, viewport]
+  );
+
+  const onMouseDown = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (event.button !== 0 && event.button !== 1) return;
+      // Pan when middle-button or when target is the SVG/frame (not an entity).
+      const target = event.target as SVGElement;
+      const isCanvasBackground =
+        event.button === 1 ||
+        target === svgRef.current ||
+        target.classList.contains('drawing-canvas__frame');
+      if (!isCanvasBackground) return;
+
+      event.preventDefault();
+      setIsPanning(true);
+      lastPanPointRef.current = { x: event.clientX, y: event.clientY };
+    },
+    []
+  );
+
+  const onMouseMove = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (!isPanning || lastPanPointRef.current === null) return;
+      const dxScreen = event.clientX - lastPanPointRef.current.x;
+      const dyScreen = event.clientY - lastPanPointRef.current.y;
+      lastPanPointRef.current = { x: event.clientX, y: event.clientY };
+      setCamera((current) => (current === null ? current : applyPan(current, { dxScreen, dyScreen }, viewport)));
+    },
+    [isPanning, viewport]
+  );
+
+  const endPan = useCallback(() => {
+    setIsPanning(false);
+    lastPanPointRef.current = null;
+  }, []);
+
+  if (props.scene === null || sceneBounds === null) {
     return (
       <section className="panel drawing-canvas" aria-label="Drawing canvas">
         <div className="panel__header">
@@ -24,18 +138,33 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
     );
   }
 
-  const bounds = props.scene.focusBounds ?? props.scene.bounds;
-  const width = Math.max(bounds.maxX - bounds.minX, 1);
-  const height = Math.max(bounds.maxY - bounds.minY, 1);
-  const markerSize = Math.max(width, height) * 0.005;
+  const bounds = sceneBounds;
+  const sceneWidth = Math.max(bounds.maxX - bounds.minX, 1);
+  const sceneHeight = Math.max(bounds.maxY - bounds.minY, 1);
+  const markerSize = Math.max(sceneWidth, sceneHeight) * 0.005;
   const highlightedLabel = props.highlightedEntityIds[0] ?? 'none';
+  const activeCamera = camera ?? initialCamera(bounds, viewport);
+  const viewBox = computeLocalViewBox(activeCamera, viewport, bounds);
+  const fitSelectionDisabled =
+    props.selectedEntityId === null && props.highlightedEntityIds.length === 0;
 
   return (
-    <section className="panel drawing-canvas" aria-label="Drawing canvas" data-highlight-mode={props.highlightMode}>
+    <section
+      className="panel drawing-canvas"
+      aria-label="Drawing canvas"
+      data-highlight-mode={props.highlightMode}
+    >
       <div className="panel__header">
         <h2>Viewer</h2>
         <p>{`Highlighted: ${highlightedLabel}`}</p>
         <p>{`Highlight mode: ${props.highlightMode}`}</p>
+        <div className="drawing-canvas__toolbar" role="toolbar" aria-label="Viewer controls">
+          <button type="button" onClick={fitAll}>Fit all</button>
+          <button type="button" onClick={fitSelection} disabled={fitSelectionDisabled}>
+            Fit selection
+          </button>
+          <span className="drawing-canvas__zoom" aria-live="polite">{`Zoom: ${activeCamera.zoom.toFixed(2)}\u00d7`}</span>
+        </div>
         <label className="viewer-toggle">
           <input
             type="checkbox"
@@ -45,21 +174,60 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
           Show survey points
         </label>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Drawing canvas surface">
-        <rect x="0" y="0" width={width} height={height} className="drawing-canvas__frame" />
-        {props.scene.entities.map((entity) => {
-          if (entity.kind === 'point' && !props.showSurveyPoints) {
-            return null;
-          }
+      <div className="drawing-canvas__surface" ref={containerRef}>
+        <svg
+          ref={svgRef}
+          viewBox={`${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`}
+          role="img"
+          aria-label="Drawing canvas surface"
+          data-zoom={activeCamera.zoom}
+          className={isPanning ? 'drawing-canvas__svg drawing-canvas__svg--panning' : 'drawing-canvas__svg'}
+          onWheel={onWheel}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={endPan}
+          onMouseLeave={endPan}
+        >
+          <rect
+            x={0}
+            y={0}
+            width={sceneWidth}
+            height={sceneHeight}
+            className="drawing-canvas__frame"
+          />
+          {props.scene.entities.map((entity) => {
+            if (entity.kind === 'point' && !props.showSurveyPoints) {
+              return null;
+            }
 
-          const isHighlighted = props.highlightedEntityIds.includes(entity.id);
-          const isSelected = props.selectedEntityId === entity.id;
+            const isHighlighted = props.highlightedEntityIds.includes(entity.id);
+            const isSelected = props.selectedEntityId === entity.id;
 
-          return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, props.onSelectEntity);
-        })}
-      </svg>
+            return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, props.onSelectEntity);
+          })}
+        </svg>
+      </div>
     </section>
   );
+}
+
+function computeLocalViewBox(
+  camera: CameraState,
+  viewport: ViewportSize,
+  bounds: { minX: number; maxY: number }
+): { minX: number; minY: number; width: number; height: number } {
+  const zoom = camera.zoom > 0 ? camera.zoom : 1;
+  const width = Math.max(viewport.width, 1) / zoom;
+  const height = Math.max(viewport.height, 1) / zoom;
+  const localCenterX = camera.center.x - bounds.minX;
+  const localCenterY = bounds.maxY - camera.center.y;
+
+  return {
+    minX: localCenterX - width / 2,
+    minY: localCenterY - height / 2,
+    width,
+    height
+  };
 }
 
 function renderEntity(
