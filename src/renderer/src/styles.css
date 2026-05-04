@@ -55,8 +55,8 @@ textarea {
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto auto 1fr;
-  gap: 1rem;
-  padding: 1rem;
+  gap: 0.5rem;
+  padding: 0.5rem;
 }
 
 .top-bar {
@@ -112,15 +112,20 @@ textarea {
 
 .app-status {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   padding: 0 0.25rem;
+  font-size: 0.75rem;
+}
+
+.app-status p {
+  margin: 0;
 }
 
 .app-layout {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr) minmax(260px, 320px);
-  gap: 1rem;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(240px, 280px);
+  gap: 0.75rem;
 }
 
 .panel {
@@ -143,7 +148,82 @@ textarea {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 1rem;
+  gap: 0.5rem;
+}
+
+.diagnostics-panel {
+  padding: 0.5rem 0.75rem;
+  gap: 0.4rem;
+}
+
+.diagnostics-panel__details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 0;
+}
+
+.diagnostics-panel__summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  list-style: none;
+  padding: 0.1rem 0;
+}
+
+.diagnostics-panel__summary::-webkit-details-marker {
+  display: none;
+}
+
+.diagnostics-panel__summary::before {
+  content: '\25B8';
+  display: inline-block;
+  font-size: 0.7rem;
+  color: #56717e;
+  transition: transform 0.12s ease;
+}
+
+.diagnostics-panel__details[open] > .diagnostics-panel__summary::before {
+  transform: rotate(90deg);
+}
+
+.diagnostics-panel__title {
+  font-weight: 600;
+  color: #14212b;
+}
+
+.diagnostics-panel__badge {
+  font-size: 0.72rem;
+  color: #56717e;
+}
+
+.diagnostics-panel__badge--error {
+  color: #b03060;
+  font-weight: 600;
+}
+
+.diagnostics-panel__list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.diagnostics-panel__list li {
+  font-size: 0.75rem;
+  list-style: disc;
+  color: #405764;
+}
+
+.diagnostics-panel__list strong {
+  display: block;
+  color: #14212b;
+  font-weight: 600;
 }
 
 .chat-panel__transcript,
