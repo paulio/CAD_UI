@@ -16,7 +16,8 @@ describe('SettingsStore', () => {
       selectedModel: null,
       recentDrawings: [],
       lastDrawingPath: null,
-      windowBounds: null
+      windowBounds: null,
+      lastKnownModels: []
     });
   });
 
@@ -34,7 +35,8 @@ describe('SettingsStore', () => {
       selectedModel: null,
       recentDrawings: [],
       lastDrawingPath: null,
-      windowBounds: null
+      windowBounds: null,
+      lastKnownModels: []
     });
     expect(files).not.toContain('settings.json');
     expect(quarantinedFile).toBeTruthy();
@@ -66,7 +68,8 @@ describe('SettingsStore', () => {
       selectedModel: 'gpt-5.4',
       recentDrawings: [],
       lastDrawingPath: null,
-      windowBounds: null
+      windowBounds: null,
+      lastKnownModels: []
     });
 
     const reloaded = new SettingsStore(settingsFilePath);

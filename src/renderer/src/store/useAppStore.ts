@@ -83,7 +83,8 @@ const defaultSettings: AppSettings = {
   selectedModel: null,
   recentDrawings: [],
   lastDrawingPath: null,
-  windowBounds: null
+  windowBounds: null,
+  lastKnownModels: []
 };
 
 const initialState: AppStoreState = {

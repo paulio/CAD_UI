@@ -7,7 +7,8 @@ export function defaultSettings(): AppSettings {
     selectedModel: null,
     recentDrawings: [],
     lastDrawingPath: null,
-    windowBounds: null
+    windowBounds: null,
+    lastKnownModels: []
   };
 }
 
@@ -34,7 +35,10 @@ function normalizeSettings(value: unknown): AppSettings {
       ? raw.recentDrawings.filter((entry): entry is string => typeof entry === 'string')
       : [],
     lastDrawingPath: typeof raw.lastDrawingPath === 'string' ? raw.lastDrawingPath : null,
-    windowBounds: isWindowBounds(raw.windowBounds) ? raw.windowBounds : null
+    windowBounds: isWindowBounds(raw.windowBounds) ? raw.windowBounds : null,
+    lastKnownModels: Array.isArray(raw.lastKnownModels)
+      ? raw.lastKnownModels.filter((entry): entry is string => typeof entry === 'string')
+      : []
   };
 }
 

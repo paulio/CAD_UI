@@ -12,6 +12,7 @@ export type AppSettings = {
   recentDrawings: string[];
   lastDrawingPath: string | null;
   windowBounds: WindowBounds | null;
+  lastKnownModels: ModelId[];
 };
 
 export type AuthState = 'checking' | 'ready' | 'reauth-required' | 'cli-missing';

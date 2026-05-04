@@ -53,7 +53,8 @@ function parseAppSettings(payload: unknown): AppSettings {
     (settings.selectedModel !== null && typeof settings.selectedModel !== 'string') ||
     !isStringArray(settings.recentDrawings) ||
     (settings.lastDrawingPath !== null && typeof settings.lastDrawingPath !== 'string') ||
-    (settings.windowBounds !== null && !isWindowBounds(settings.windowBounds))
+    (settings.windowBounds !== null && !isWindowBounds(settings.windowBounds)) ||
+    (settings.lastKnownModels !== undefined && !isStringArray(settings.lastKnownModels))
   ) {
     throw new Error('Invalid app settings payload.');
   }
@@ -62,7 +63,8 @@ function parseAppSettings(payload: unknown): AppSettings {
     selectedModel: settings.selectedModel,
     recentDrawings: settings.recentDrawings,
     lastDrawingPath: settings.lastDrawingPath,
-    windowBounds: settings.windowBounds
+    windowBounds: settings.windowBounds,
+    lastKnownModels: isStringArray(settings.lastKnownModels) ? settings.lastKnownModels : []
   };
 }
 
@@ -168,8 +170,18 @@ export function registerIpc(
       );
     }
 
-    const models = modelsResult.status === 'fulfilled' ? modelsResult.value : [];
-    const reconciledSettings = reconcileBootstrapSettings(settings, models, isTrustworthyModelCatalog(modelsResult));
+    const liveModels = modelsResult.status === 'fulfilled' ? modelsResult.value : [];
+    const cachedModels = settings.lastKnownModels;
+    // Prefer the live catalog. If discovery failed (timeout, transient CLI error)
+    // fall back to the cached list so the dropdown isn't empty and the user can
+    // continue working with their previously selected model.
+    const models = liveModels.length > 0 ? liveModels : cachedModels;
+    const trustedModelCatalog = liveModels.length > 0 && isTrustworthyModelCatalog(modelsResult);
+    const reconciledSettings = reconcileBootstrapSettings(
+      liveModels.length > 0 ? { ...settings, lastKnownModels: liveModels } : settings,
+      models,
+      trustedModelCatalog
+    );
 
     if (reconciledSettings !== settings) {
       await settingsStore.save(reconciledSettings);

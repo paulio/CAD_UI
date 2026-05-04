@@ -37,7 +37,7 @@ describe('CopilotAdapter', () => {
     const adapter = new CopilotAdapter({ runCommand });
 
     await expect(adapter.listModels()).resolves.toEqual(['gpt-5.4', 'gpt-5.4-mini', 'claude-sonnet-4.6']);
-    expect(runCommand).toHaveBeenCalledWith(['help', 'config'], { timeoutMs: 10000 });
+    expect(runCommand).toHaveBeenCalledWith(['help', 'config'], { timeoutMs: 30000 });
   });
 
   it('probes auth with the verified prompt invocation', async () => {

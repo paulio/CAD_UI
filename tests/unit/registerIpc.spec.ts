@@ -50,7 +50,8 @@ describe('registerIpc', () => {
         selectedModel: null,
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: []
       }),
       save
     } as never, createCopilotAdapterStub());
@@ -80,7 +81,8 @@ describe('registerIpc', () => {
         selectedModel: null,
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: []
       }),
       save
     } as never, createCopilotAdapterStub());
@@ -93,7 +95,8 @@ describe('registerIpc', () => {
       windowBounds: {
         width: 1280,
         height: 720
-      }
+      },
+      lastKnownModels: ['gpt-5.4']
     };
 
     await saveSettings?.({}, payload);
@@ -107,7 +110,8 @@ describe('registerIpc', () => {
         selectedModel: null,
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: []
       }),
       save: vi.fn()
     } as never, createCopilotAdapterStub());
@@ -123,7 +127,8 @@ describe('registerIpc', () => {
         selectedModel: null,
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: []
       }),
       save: vi.fn()
     } as never, createCopilotAdapterStub());
@@ -164,10 +169,11 @@ describe('registerIpc', () => {
         selectedModel: null,
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: ['gpt-5.4', 'gpt-5.4-mini']
       }
     });
-    expect(files).not.toContain('register-ipc-settings.json');
+    expect(files).toContain('register-ipc-settings.json');
     expect(quarantinedFile).toBeTruthy();
     await expect(readFile(`${dirname(corruptedSettingsFilePath)}/${quarantinedFile}`, 'utf8')).resolves.toBe('{invalid json');
 
@@ -183,7 +189,8 @@ describe('registerIpc', () => {
           selectedModel: 'stale-model',
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save
       } as never,
@@ -200,14 +207,16 @@ describe('registerIpc', () => {
         selectedModel: 'gpt-5.4',
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: ['gpt-5.4', 'gpt-5.4-mini']
       }
     });
     expect(save).toHaveBeenCalledWith({
       selectedModel: 'gpt-5.4',
       recentDrawings: [],
       lastDrawingPath: null,
-      windowBounds: null
+      windowBounds: null,
+      lastKnownModels: ['gpt-5.4', 'gpt-5.4-mini']
     });
   });
 
@@ -222,7 +231,8 @@ describe('registerIpc', () => {
           selectedModel: 'gpt-5.4',
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save
       } as never,
@@ -239,7 +249,8 @@ describe('registerIpc', () => {
         selectedModel: 'gpt-5.4',
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: []
       }
     });
     expect(save).not.toHaveBeenCalled();
@@ -255,7 +266,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -284,7 +296,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -301,7 +314,8 @@ describe('registerIpc', () => {
         selectedModel: null,
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: ['gpt-5.4-live']
       }
     });
   });
@@ -319,7 +333,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -336,7 +351,8 @@ describe('registerIpc', () => {
         selectedModel: null,
         recentDrawings: [],
         lastDrawingPath: null,
-        windowBounds: null
+        windowBounds: null,
+        lastKnownModels: ['override-model', 'override-model-mini']
       }
     });
     expect(copilotAdapter.listModels).not.toHaveBeenCalled();
@@ -357,7 +373,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -401,7 +418,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -445,7 +463,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -486,7 +505,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -518,7 +538,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -542,7 +563,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
@@ -587,7 +609,8 @@ describe('registerIpc', () => {
           selectedModel: 'gpt-5.4',
           recentDrawings: ['older.dwg'],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save
       } as never,
@@ -625,7 +648,8 @@ describe('registerIpc', () => {
       selectedModel: 'gpt-5.4',
       recentDrawings: ['tests/fixtures/site.dxf', 'older.dwg'],
       lastDrawingPath: 'tests/fixtures/site.dxf',
-      windowBounds: null
+      windowBounds: null,
+      lastKnownModels: []
     });
   });
 
@@ -641,7 +665,8 @@ describe('registerIpc', () => {
           selectedModel: null,
           recentDrawings: [],
           lastDrawingPath: null,
-          windowBounds: null
+          windowBounds: null,
+          lastKnownModels: []
         }),
         save: vi.fn()
       } as never,
