@@ -16,6 +16,8 @@ export type FitOptions = {
 
 const MIN_ZOOM = 1e-6;
 const MAX_ZOOM = 1e9;
+const MAX_WHEEL_DELTA = 200;
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) {
@@ -67,7 +69,10 @@ export function applyWheelZoom(
   event: { screenX: number; screenY: number; deltaY: number },
   viewport: ViewportSize
 ): CameraState {
-  const factor = Math.exp(-event.deltaY * 0.0015);
+  // Some mice and trackpads emit very large deltaY values per tick. Clamp to keep
+  // a single wheel event from collapsing zoom to the MIN_ZOOM floor.
+  const clampedDelta = Math.max(-MAX_WHEEL_DELTA, Math.min(MAX_WHEEL_DELTA, event.deltaY));
+  const factor = Math.exp(-clampedDelta * WHEEL_ZOOM_SENSITIVITY);
   const nextZoom = clampZoom(camera.zoom * factor);
   const worldBefore = screenToWorld(camera, viewport, { x: event.screenX, y: event.screenY });
   const candidate: CameraState = { zoom: nextZoom, center: camera.center };

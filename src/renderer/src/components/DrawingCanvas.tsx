@@ -113,16 +113,18 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
 
   const onMouseDown = useCallback(
     (event: React.MouseEvent<SVGSVGElement>) => {
-      if (event.button !== 0 && event.button !== 1) return;
+      // 0 = left, 1 = middle, 2 = right. Right-drag and middle-drag always pan.
+      if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
       const target = event.target as SVGElement;
       const isCanvasBackground =
         event.button === 1 ||
+        event.button === 2 ||
         target === svgRef.current ||
         target.classList.contains('drawing-canvas__frame');
       if (!isCanvasBackground) return;
 
       event.preventDefault();
-      const wantsPan = event.button === 1 || event.shiftKey;
+      const wantsPan = event.button === 1 || event.button === 2 || event.shiftKey;
 
       if (wantsPan || props.onBoxSelect === undefined || camera === null || svgRef.current === null) {
         setDrag({ kind: 'pan', lastClient: { x: event.clientX, y: event.clientY } });
@@ -139,6 +141,11 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
     },
     [camera, viewport, props.onBoxSelect]
   );
+
+  const onContextMenu = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
+    // Suppress the native context menu so right-drag can pan freely.
+    event.preventDefault();
+  }, []);
 
   const onMouseMove = useCallback(
     (event: React.MouseEvent<SVGSVGElement>) => {
@@ -249,6 +256,9 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
           </button>
           <span className="drawing-canvas__zoom" aria-live="polite">{`Zoom: ${activeCamera.zoom.toFixed(2)}\u00d7`}</span>
         </div>
+        <p className="drawing-canvas__hint">
+          Pan: right-drag (or middle-drag, or Shift + left-drag). Zoom: wheel. Box-select: left-drag.
+        </p>
         <label className="viewer-toggle">
           <input
             type="checkbox"
@@ -271,6 +281,7 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
           onMouseMove={onMouseMove}
           onMouseUp={endDrag}
           onMouseLeave={endDrag}
+          onContextMenu={onContextMenu}
         >
           <rect
             x={0}

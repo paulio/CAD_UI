@@ -243,6 +243,13 @@ textarea {
   margin-left: auto;
 }
 
+.drawing-canvas__hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.7rem;
+  color: #56717e;
+  font-style: italic;
+}
+
 .drawing-canvas__marquee {
   position: absolute;
   pointer-events: none;

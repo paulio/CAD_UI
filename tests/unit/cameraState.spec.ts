@@ -57,6 +57,20 @@ describe('cameraState', () => {
     expect(zoomed.zoom).toBeLessThan(camera.zoom);
   });
 
+  it('clamps very large wheel deltas so a single tick cannot collapse the zoom', () => {
+    const camera = { center: { x: 0, y: 0 }, zoom: 1 };
+    const viewport = { width: 200, height: 200 };
+
+    // Repeated very large wheel deltas should still leave the drawing visible
+    // (zoom > a small fraction of the original) instead of collapsing to MIN_ZOOM.
+    let result = camera;
+    for (let i = 0; i < 5; i += 1) {
+      result = applyWheelZoom(result, { screenX: 100, screenY: 100, deltaY: 10_000 }, viewport);
+    }
+
+    expect(result.zoom).toBeGreaterThan(0.1);
+  });
+
   it('viewBoxFor produces a viewBox sized inversely to zoom', () => {
     const camera = { center: { x: 100, y: 100 }, zoom: 4 };
     const viewBox = viewBoxFor(camera, { width: 800, height: 400 });
