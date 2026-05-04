@@ -119,4 +119,32 @@ describe('CopilotAdapter', () => {
 
     await expect(adapter.runPrompt('gpt-5.4', 'Summarize the drawing.')).resolves.toBe('Hello from Copilot');
   });
+
+  it('extracts final assistant text from the data-wrapped event shape used by current Copilot CLI', async () => {
+    const runCommand = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stdout: [
+        '{"type":"assistant.message_delta","data":{"messageId":"m1","deltaContent":"Hello "}}',
+        '{"type":"assistant.message","data":{"messageId":"m1","content":"Hello from Copilot","toolRequests":[]}}'
+      ].join('\n'),
+      stderr: ''
+    });
+    const adapter = new CopilotAdapter({ runCommand });
+
+    await expect(adapter.runPrompt('gpt-5.4', 'Summarize the drawing.')).resolves.toBe('Hello from Copilot');
+  });
+
+  it('falls back to data-wrapped deltaContent when no final message is present', async () => {
+    const runCommand = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stdout: [
+        '{"type":"assistant.message_delta","data":{"messageId":"m1","deltaContent":"Hello"}}',
+        '{"type":"assistant.message_delta","data":{"messageId":"m1","deltaContent":" from Copilot"}}'
+      ].join('\n'),
+      stderr: ''
+    });
+    const adapter = new CopilotAdapter({ runCommand });
+
+    await expect(adapter.runPrompt('gpt-5.4', 'Summarize the drawing.')).resolves.toBe('Hello from Copilot');
+  });
 });

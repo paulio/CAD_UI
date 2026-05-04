@@ -168,7 +168,13 @@ function extractAssistantText(output: string): string {
     try {
       const event = JSON.parse(candidate) as Record<string, unknown>;
       const eventType = typeof event.type === 'string' ? event.type : '';
-      const finalText = readAssistantMessageText(event.message);
+      // Newer Copilot CLI versions wrap the payload under `data`; older builds
+      // put `message` and `delta` at the top level. Accept either shape.
+      const eventData =
+        typeof event.data === 'object' && event.data !== null
+          ? (event.data as Record<string, unknown>)
+          : event;
+      const finalText = readAssistantMessageText(eventData.message ?? eventData);
 
       if ((eventType === 'assistant.message' || eventType === 'assistant') && finalText.length > 0) {
         finalMessages.push(finalText);
@@ -176,7 +182,7 @@ function extractAssistantText(output: string): string {
       }
 
       if (eventType === 'assistant.message_delta') {
-        const deltaText = readAssistantDeltaText(event);
+        const deltaText = readAssistantDeltaText(eventData);
 
         if (deltaText.length > 0) {
           deltaMessages.push(deltaText);
@@ -231,6 +237,11 @@ function readAssistantMessageText(message: unknown): string {
 }
 
 function readAssistantDeltaText(event: Record<string, unknown>): string {
+  // Newer CLI: { deltaContent: "text" }. Older CLI: { delta: ..., message_delta: ... }.
+  if (typeof event.deltaContent === 'string') {
+    return event.deltaContent;
+  }
+
   const directDelta = readTextPart(event.delta);
 
   if (directDelta.length > 0) {
