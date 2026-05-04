@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HighlightMode } from '../../../shared/contracts';
 import type { Point2D, ViewerEntity, ViewerPolylineEntity, ViewerPolylineVertex, ViewerScene } from '../../../shared/viewerTypes';
 import {
@@ -44,36 +44,64 @@ const FALLBACK_VIEWPORT: ViewportSize = { width: 1, height: 1 };
 const BOX_SELECT_THRESHOLD_PX = 4;
 
 export function DrawingCanvas(props: DrawingCanvasProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const fallbackResizeRef = useRef<(() => void) | null>(null);
   const [viewport, setViewport] = useState<ViewportSize>(FALLBACK_VIEWPORT);
+  const [viewportMeasured, setViewportMeasured] = useState(false);
   const [camera, setCamera] = useState<CameraState | null>(null);
   const [drag, setDrag] = useState<DragState>({ kind: 'idle' });
 
   const sceneBounds = props.scene?.focusBounds ?? props.scene?.bounds ?? null;
 
-  useLayoutEffect(() => {
-    const node = containerRef.current;
+  const measureNode = useCallback((node: HTMLDivElement | null) => {
+    if (observerRef.current !== null) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (fallbackResizeRef.current !== null) {
+      window.removeEventListener('resize', fallbackResizeRef.current);
+      fallbackResizeRef.current = null;
+    }
+
     if (node === null) {
       return;
     }
 
     const updateViewport = () => {
       const rect = node.getBoundingClientRect();
-      setViewport({ width: Math.max(rect.width, 1), height: Math.max(rect.height, 1) });
+      const width = Math.max(rect.width, 1);
+      const height = Math.max(rect.height, 1);
+      setViewport({ width, height });
+      setViewportMeasured(true);
     };
 
     updateViewport();
 
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', updateViewport);
-      return () => window.removeEventListener('resize', updateViewport);
+      fallbackResizeRef.current = updateViewport;
+      return;
     }
 
     const observer = new ResizeObserver(updateViewport);
     observer.observe(node);
-    return () => observer.disconnect();
+    observerRef.current = observer;
   }, []);
+
+  useEffect(
+    () => () => {
+      if (observerRef.current !== null) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+      if (fallbackResizeRef.current !== null) {
+        window.removeEventListener('resize', fallbackResizeRef.current);
+        fallbackResizeRef.current = null;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (sceneBounds === null) {
@@ -81,10 +109,14 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
       return;
     }
 
-    setCamera(initialCamera(sceneBounds, viewport));
-    // We intentionally only refit when the underlying scene bounds change, not viewport.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.scene?.drawingPath, sceneBounds?.minX, sceneBounds?.minY, sceneBounds?.maxX, sceneBounds?.maxY]);
+    if (!viewportMeasured) {
+      // Wait until the surface has been measured so the initial camera matches
+      // the real pixel size. Otherwise wheel zoom and pan deltas will be wrong.
+      return;
+    }
+
+    setCamera((current) => current ?? initialCamera(sceneBounds, viewport));
+  }, [props.scene?.drawingPath, sceneBounds?.minX, sceneBounds?.minY, sceneBounds?.maxX, sceneBounds?.maxY, viewportMeasured, viewport]);
 
   const fitAll = useCallback(() => {
     if (sceneBounds === null) return;
@@ -268,7 +300,7 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
           Show survey points
         </label>
       </div>
-      <div className="drawing-canvas__surface" ref={containerRef}>
+      <div className="drawing-canvas__surface" ref={measureNode}>
         <svg
           ref={svgRef}
           viewBox={`${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`}
