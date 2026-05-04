@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "dxf-parser": "^1.1.2",
-    "electron": "^37.0.0",
+    "electron": "^39.8.9",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

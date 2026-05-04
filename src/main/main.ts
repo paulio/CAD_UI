@@ -4,15 +4,26 @@ import { registerIpc } from './ipc/registerIpc';
 import { SettingsStore } from './services/settingsStore';
 import { createMainWindow } from './window/createMainWindow';
 
+const openWindows = new Set<BrowserWindow>();
+
+async function openMainWindow(): Promise<void> {
+  const window = await createMainWindow();
+  openWindows.add(window);
+
+  window.on('closed', () => {
+    openWindows.delete(window);
+  });
+}
+
 async function bootstrap(): Promise<void> {
   await app.whenReady();
 
   registerIpc(new SettingsStore(join(app.getPath('userData'), 'settings.json')));
-  await createMainWindow();
+  await openMainWindow();
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      await createMainWindow();
+      await openMainWindow();
     }
   });
 }

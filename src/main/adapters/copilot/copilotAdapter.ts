@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ModelId, AuthState } from '../../../shared/contracts';
 import { parseModelCatalog, parseProbeResult } from './modelCatalog';
 
@@ -22,6 +24,11 @@ export type RunCopilotCommand = (args: string[], options: CopilotCommandOptions)
 
 type CopilotAdapterDependencies = {
   runCommand?: RunCopilotCommand;
+};
+
+type ResolvedCopilotCommand = {
+  command: string;
+  argsPrefix: string[];
 };
 
 type ExecFileFailure = NodeJS.ErrnoException & {
@@ -69,8 +76,10 @@ export class CopilotAdapter {
   }
 
   async startLogin(): Promise<void> {
+    const resolvedCommand = resolveCopilotCommand();
+
     await new Promise<void>((resolve, reject) => {
-      const child = execFile('copilot', ['login'], { windowsHide: true });
+      const child = execFile(resolvedCommand.command, [...resolvedCommand.argsPrefix, 'login'], { windowsHide: true });
 
       child.once('spawn', () => {
         child.unref();
@@ -89,10 +98,12 @@ function buildPromptArgs(model: string, prompt: string): string[] {
 }
 
 function runCopilotCommand(args: string[], options: CopilotCommandOptions): Promise<CopilotCommandResult> {
+  const resolvedCommand = resolveCopilotCommand();
+
   return new Promise((resolve, reject) => {
     execFile(
-      'copilot',
-      args,
+      resolvedCommand.command,
+      [...resolvedCommand.argsPrefix, ...args],
       {
         windowsHide: true,
         maxBuffer: 8 * 1024 * 1024,
@@ -253,4 +264,31 @@ function readTextPart(value: unknown): string {
 
 function looksLikeJson(value: string): boolean {
   return value.startsWith('{') || value.startsWith('[');
+}
+
+function resolveCopilotCommand(): ResolvedCopilotCommand {
+  if (process.platform !== 'win32') {
+    return {
+      command: 'copilot',
+      argsPrefix: []
+    };
+  }
+
+  const appData = process.env.APPDATA;
+
+  if (typeof appData === 'string' && appData.length > 0) {
+    const shimPath = join(appData, 'Code', 'User', 'globalStorage', 'github.copilot-chat', 'copilotCli', 'copilot.ps1');
+
+    if (existsSync(shimPath)) {
+      return {
+        command: 'powershell.exe',
+        argsPrefix: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', shimPath]
+      };
+    }
+  }
+
+  return {
+    command: 'copilot',
+    argsPrefix: []
+  };
 }
