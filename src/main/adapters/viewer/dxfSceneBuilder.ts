@@ -5,6 +5,7 @@ import DxfParser, {
   type ICircleEntity,
   type IEntity,
   type IInsertEntity,
+  type ILayer,
   type ILineEntity,
   type ILwpolylineEntity,
   type IPoint,
@@ -12,10 +13,15 @@ import DxfParser, {
   type ITextEntity
 } from 'dxf-parser';
 import type { EntityHandle } from '../../../shared/contracts';
-import type { Point2D, ViewerBounds, ViewerEntity, ViewerPolylineVertex, ViewerScene } from '../../../shared/viewerTypes';
+import type { Point2D, ViewerBounds, ViewerEntity, ViewerLayer, ViewerPolylineVertex, ViewerScene } from '../../../shared/viewerTypes';
 
 type ParsedDxfDocument = {
   entities: IEntity[];
+  tables?: {
+    layer?: {
+      layers?: Record<string, ILayer>;
+    };
+  };
 };
 
 export async function buildSceneFromDxf(dxfPath: string): Promise<ViewerScene> {
@@ -31,12 +37,14 @@ export async function buildSceneFromDxf(dxfPath: string): Promise<ViewerScene> {
 
     return index;
   }, {});
+  const layers = buildLayerIndex(entities, document.tables?.layer?.layers ?? {});
 
   return {
     drawingPath,
     bounds: computeSceneBounds(entities),
     focusBounds: computeFocusedSceneBounds(entities),
     entities,
+    layers,
     handleIndex
   };
 }
@@ -325,6 +333,42 @@ function computeFocusedSceneBounds(entities: ViewerEntity[]): ViewerBounds | nul
   const preferredBounds = computeSceneBounds(preferredEntities);
 
   return preferredBounds ?? computeSceneBounds(entities);
+}
+
+function buildLayerIndex(entities: ViewerEntity[], dxfLayers: Record<string, ILayer>): ViewerLayer[] {
+  const counts = new Map<string, number>();
+
+  for (const entity of entities) {
+    counts.set(entity.layer, (counts.get(entity.layer) ?? 0) + 1);
+  }
+
+  const layerIds = new Set<string>(counts.keys());
+
+  for (const layerId of Object.keys(dxfLayers)) {
+    layerIds.add(layerId);
+  }
+
+  return [...layerIds].sort().map((id) => {
+    const dxfLayer = dxfLayers[id];
+
+    return {
+      id,
+      name: dxfLayer?.name ?? id,
+      color: formatLayerColor(dxfLayer?.color),
+      visible: dxfLayer ? dxfLayer.visible !== false && dxfLayer.frozen !== true : true,
+      locked: false,
+      entityCount: counts.get(id) ?? 0
+    };
+  });
+}
+
+function formatLayerColor(color: number | undefined): string | null {
+  if (typeof color !== 'number' || !Number.isFinite(color) || color < 0) {
+    return null;
+  }
+
+  const clamped = Math.floor(color) & 0xffffff;
+  return `#${clamped.toString(16).padStart(6, '0')}`;
 }
 
 function computeBoundsFromPoints(points: Point2D[]): ViewerBounds | null {

@@ -4,6 +4,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { DrawingCanvas } from './components/DrawingCanvas';
 import { FeatureInspector } from './components/FeatureInspector';
+import { LayerPanel } from './components/LayerPanel';
 import { TopBar } from './components/TopBar';
 import { useAppStore } from './store/useAppStore';
 
@@ -60,12 +61,22 @@ export function App() {
             highlightMode={state.highlightMode}
             selectedEntityId={state.selectedEntityId}
             showSurveyPoints={state.showSurveyPoints}
+            layerState={state.layerState}
             onSelectEntity={actions.selectEntity}
             onToggleSurveyPoints={actions.setShowSurveyPoints}
           />
           <DiagnosticsPanel diagnostics={state.diagnostics} />
         </div>
-        <FeatureInspector entity={selectedEntity} />
+        <div className="right-column">
+          {state.scene !== null && Array.isArray(state.scene.layers) && state.scene.layers.length > 0 ? (
+            <LayerPanel
+              layers={state.scene.layers}
+              layerState={state.layerState}
+              onChange={actions.applyLayerChange}
+            />
+          ) : null}
+          <FeatureInspector entity={selectedEntity} />
+        </div>
       </section>
     </main>
   );

@@ -17,6 +17,7 @@ type DrawingCanvasProps = {
   highlightMode: HighlightMode;
   selectedEntityId: string | null;
   showSurveyPoints: boolean;
+  layerState?: Record<string, { visible: boolean; locked: boolean }>;
   onSelectEntity: (entityId: string) => void;
   onToggleSurveyPoints: (next: boolean) => void;
 };
@@ -200,10 +201,17 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
               return null;
             }
 
+            const layer = props.layerState?.[entity.layer];
+            if (layer && !layer.visible) {
+              return null;
+            }
+
+            const isLocked = layer?.locked ?? false;
             const isHighlighted = props.highlightedEntityIds.includes(entity.id);
             const isSelected = props.selectedEntityId === entity.id;
+            const onSelect = isLocked ? noopSelect : props.onSelectEntity;
 
-            return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, props.onSelectEntity);
+            return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, onSelect, isLocked);
           })}
         </svg>
       </div>
@@ -230,6 +238,8 @@ function computeLocalViewBox(
   };
 }
 
+const noopSelect = (_id: string): void => undefined;
+
 function renderEntity(
   entity: ViewerEntity,
   minX: number,
@@ -237,13 +247,15 @@ function renderEntity(
   markerSize: number,
   isHighlighted: boolean,
   isSelected: boolean,
-  onSelectEntity: (entityId: string) => void
+  onSelectEntity: (entityId: string) => void,
+  isLocked: boolean
 ) {
   const className = [
     'drawing-entity',
     entity.kind === 'text' ? 'drawing-entity--text' : '',
     entity.kind === 'insert' ? 'drawing-entity--insert' : '',
     entity.kind === 'point' ? 'drawing-entity--point' : '',
+    isLocked ? 'drawing-entity--locked' : '',
     isHighlighted ? 'drawing-entity--highlighted' : '',
     isSelected ? 'drawing-entity--selected' : ''
   ]
@@ -251,8 +263,8 @@ function renderEntity(
     .join(' ');
   const commonProps = {
     className,
-    onClick: () => onSelectEntity(entity.id),
-    tabIndex: 0,
+    onClick: isLocked ? undefined : () => onSelectEntity(entity.id),
+    tabIndex: isLocked ? -1 : 0,
     role: 'button' as const,
     'aria-label': entity.label ?? entity.id
   };

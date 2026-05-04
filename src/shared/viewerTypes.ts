@@ -94,11 +94,21 @@ export type ViewerEntity =
 
 export type ViewerHandleIndex = Record<EntityHandle, string>;
 
+export type ViewerLayer = {
+  id: string;
+  name: string;
+  color: string | null;
+  visible: boolean;
+  locked: boolean;
+  entityCount: number;
+};
+
 export type ViewerScene = {
   drawingPath: string | null;
   bounds: ViewerBounds | null;
   focusBounds: ViewerBounds | null;
   entities: ViewerEntity[];
+  layers: ViewerLayer[];
   handleIndex: ViewerHandleIndex;
 };
 

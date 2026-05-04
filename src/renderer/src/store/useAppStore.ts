@@ -9,7 +9,15 @@ import type {
   HighlightMode
 } from '../../../shared/contracts';
 import type { EntityHandle } from '../../../shared/contracts';
-import type { ViewerEntity, ViewerScene } from '../../../shared/viewerTypes';
+import type { ViewerEntity, ViewerLayer, ViewerScene } from '../../../shared/viewerTypes';
+
+export type LayerStateMap = Record<string, { visible: boolean; locked: boolean }>;
+
+export type LayerChange =
+  | { id: string; patch: { visible: boolean } }
+  | { id: string; patch: { locked: boolean } }
+  | { id: string; patch: { isolate: true } }
+  | { patch: { showAll: true } };
 
 export type ChatReplayTarget = {
   id: string;
@@ -52,6 +60,7 @@ export type AppStoreState = {
   isOpeningDrawing: boolean;
   isSendingPrompt: boolean;
   showSurveyPoints: boolean;
+  layerState: LayerStateMap;
 };
 
 type AppStore = {
@@ -65,6 +74,7 @@ type AppStore = {
     focusFeatures: (target: ChatReplayTarget) => void;
     selectEntity: (entityId: string) => void;
     setShowSurveyPoints: (next: boolean) => void;
+    applyLayerChange: (change: LayerChange) => void;
   };
 };
 
@@ -95,7 +105,8 @@ const initialState: AppStoreState = {
   prompt: '',
   isOpeningDrawing: false,
   isSendingPrompt: false,
-  showSurveyPoints: false
+  showSurveyPoints: false,
+  layerState: {}
 };
 
 export function useAppStore(): AppStore {
@@ -201,6 +212,7 @@ export function useAppStore(): AppStore {
           diagnostics: result.diagnostics,
           openDrawingError: result.error,
           settings: nextSettings,
+          layerState: result.scene ? defaultLayerState(result.scene.layers) : {},
           ...emptyHighlightState(),
           selectedEntityId: null
         };
@@ -336,6 +348,11 @@ export function useAppStore(): AppStore {
         setState((current) => ({
           ...current,
           showSurveyPoints: next
+        })),
+      applyLayerChange: (change: LayerChange) =>
+        setState((current) => ({
+          ...current,
+          layerState: applyLayerChange(current.scene?.layers ?? [], current.layerState, change)
         }))
     }
   };
@@ -528,4 +545,52 @@ function applyOpenedDrawingToSettings(settings: AppSettings, filePath: string): 
     recentDrawings: [filePath, ...settings.recentDrawings.filter((entry) => entry !== filePath)].slice(0, 10),
     lastDrawingPath: filePath
   };
+}
+
+export function defaultLayerState(layers: ViewerLayer[] | undefined | null): LayerStateMap {
+  if (!Array.isArray(layers)) {
+    return {};
+  }
+
+  return layers.reduce<LayerStateMap>((accumulator, layer) => {
+    accumulator[layer.id] = { visible: layer.visible, locked: layer.locked };
+    return accumulator;
+  }, {});
+}
+
+export function applyLayerChange(layers: ViewerLayer[] | undefined | null, state: LayerStateMap, change: LayerChange): LayerStateMap {
+  const safeLayers = Array.isArray(layers) ? layers : [];
+  const merged = safeLayers.reduce<LayerStateMap>((accumulator, layer) => {
+    accumulator[layer.id] = state[layer.id] ?? { visible: layer.visible, locked: layer.locked };
+    return accumulator;
+  }, {});
+
+  if ('patch' in change && 'showAll' in change.patch) {
+    return Object.fromEntries(
+      Object.entries(merged).map(([id, current]) => [id, { ...current, visible: true }])
+    );
+  }
+
+  if ('id' in change) {
+    const current = merged[change.id] ?? { visible: true, locked: false };
+
+    if ('isolate' in change.patch) {
+      return Object.fromEntries(
+        Object.entries(merged).map(([id, entry]) => [
+          id,
+          { ...entry, visible: id === change.id }
+        ])
+      );
+    }
+
+    if ('visible' in change.patch) {
+      return { ...merged, [change.id]: { ...current, visible: change.patch.visible } };
+    }
+
+    if ('locked' in change.patch) {
+      return { ...merged, [change.id]: { ...current, locked: change.patch.locked } };
+    }
+  }
+
+  return merged;
 }

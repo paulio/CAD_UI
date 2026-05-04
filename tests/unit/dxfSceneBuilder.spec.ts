@@ -140,6 +140,22 @@ describe('buildSceneFromDxf', () => {
       await rm(tempDirectory, { force: true, recursive: true });
     }
   });
+
+  it('builds a layer index with default visibility, lock, and per-layer entity counts', async () => {
+    const scene = await buildSceneFromDxf('tests/fixtures/site.dxf');
+
+    expect(Array.isArray(scene.layers)).toBe(true);
+    expect(scene.layers.length).toBeGreaterThan(0);
+
+    const treeLayer = scene.layers.find((layer) => layer.id === 'L-PLNT-TREE');
+    expect(treeLayer).toBeDefined();
+    expect(treeLayer?.visible).toBe(true);
+    expect(treeLayer?.locked).toBe(false);
+    expect(treeLayer?.entityCount).toBeGreaterThan(0);
+
+    const totalCount = scene.layers.reduce((sum, layer) => sum + layer.entityCount, 0);
+    expect(totalCount).toBe(scene.entities.length);
+  });
 });
 
 function createBulgePolylineDxf(): string {
