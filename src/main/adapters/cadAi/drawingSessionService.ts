@@ -1,4 +1,6 @@
-import { resolve } from 'node:path';
+import { copyFile, mkdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { DiagnosticEntry, DrawingSession } from '../../../shared/contracts';
 import { CadAiAdapter } from './cadAiAdapter';
 
@@ -27,9 +29,10 @@ export class DrawingSessionService {
 
     try {
       const ingest = await this.cadAiAdapter.ingest(sourcePath);
+      const dxfPath = await resolveUsableDxfPath(this.cadAiAdapter, sourcePath, ingest.dxfPath);
       const session = {
         sourcePath,
-        dxfPath: requireUsableDxfPath(sourcePath, ingest.dxfPath),
+        dxfPath,
         cachePath: ingest.cachePath,
         openedAt: new Date().toISOString()
       } satisfies DrawingSession;
@@ -56,16 +59,41 @@ export class DrawingSessionService {
   }
 }
 
-function requireUsableDxfPath(sourcePath: string, dxfPath: string | null): string {
+async function resolveUsableDxfPath(cadAiAdapter: CadAiAdapter, sourcePath: string, dxfPath: string | null): Promise<string> {
   if (dxfPath !== null) {
     return dxfPath;
   }
 
   if (sourcePath.toLowerCase().endsWith('.dwg')) {
+    let convertedOutputPath = '';
+    const stableDxfPath = sourcePath.replace(/\.dwg$/i, '.dxf');
+    const temporaryDxfPath = resolve(tmpdir(), `${sourcePath.split(/[\\/]/).pop()?.replace(/\.dwg$/i, '') ?? 'cad-ui'}.converted.dxf`);
+
+    try {
+      const converted = await cadAiAdapter.convertDwgToDxf(sourcePath, temporaryDxfPath);
+      convertedOutputPath = converted.outputPath.trim();
+    } catch {
+      convertedOutputPath = '';
+    }
+
+    if (convertedOutputPath.length > 0) {
+      const resolvedConvertedPath = resolve(convertedOutputPath);
+      const resolvedStablePath = resolve(stableDxfPath);
+
+      if (resolvedConvertedPath === resolvedStablePath) {
+        return resolvedStablePath;
+      }
+
+      await mkdir(dirname(resolvedStablePath), { recursive: true }).catch(() => undefined);
+      await copyFile(resolvedConvertedPath, resolvedStablePath);
+      return resolvedStablePath;
+    }
+
     throw new Error(
-      `Opened DWG ${sourcePath} but CAD_AI did not provide a usable DXF path. Generate a DXF output path or place an adjacent .dxf file next to the DWG.`
+      `Opened DWG ${sourcePath} but CAD_AI did not provide a usable DXF path after conversion.`
     );
   }
 
   throw new Error(`Opened drawing ${sourcePath} but no usable DXF path was available.`);
 }
+

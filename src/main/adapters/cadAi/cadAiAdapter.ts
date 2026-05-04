@@ -17,6 +17,11 @@ export type CadAiIngestResult = {
   dxfPath: string | null;
 };
 
+export type CadAiConvertResult = {
+  inputPath: string;
+  outputPath: string;
+};
+
 type RunCadAiCommand = (
   command: string,
   args: string[],
@@ -62,6 +67,30 @@ export class CadAiAdapter {
       sourcePath,
       cachePath,
       dxfPath
+    };
+  }
+
+  async convertDwgToDxf(filePath: string, outputPath?: string): Promise<CadAiConvertResult> {
+    const sourcePath = resolve(filePath);
+    const executable = resolveCadAiCommand(this.cadAiRoot);
+    const targetPath = outputPath ?? format({
+      ...parse(sourcePath),
+      base: undefined,
+      ext: '.dxf'
+    });
+    const result = await this.runCommand(
+      executable.command,
+      [...executable.args, 'oda', 'convert', sourcePath, '--output', targetPath, '--format', 'json'],
+      {
+        cwd: executable.cwd,
+        timeoutMs: CAD_AI_TIMEOUT_MS
+      }
+    );
+    const payload = parseJsonRecord(result.stdout);
+
+    return {
+      inputPath: readRequiredPath(payload, 'input'),
+      outputPath: readRequiredPath(payload, 'output')
     };
   }
 }

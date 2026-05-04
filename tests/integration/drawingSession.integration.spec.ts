@@ -48,8 +48,54 @@ describe('DrawingSessionService', () => {
     await rm(fixtureRoot, { force: true, recursive: true });
   });
 
-  it('fails clearly when a DWG opens without any usable DXF path', async () => {
+  it('converts a DWG to DXF when CAD_AI does not return a DXF path', async () => {
     const fixtureRoot = 'tests/.tmp/dwg-missing-dxf';
+    const sourcePath = join(fixtureRoot, 'sample.dwg');
+    const cachePath = join(fixtureRoot, 'sample.dwg.cadqcache');
+    const convertedDxfPath = join(fixtureRoot, 'sample.dxf');
+    const diagnostics = { add: vi.fn() };
+
+    await rm(fixtureRoot, { force: true, recursive: true });
+    await mkdir(fixtureRoot, { recursive: true });
+    await writeFile(sourcePath, '', 'utf8');
+
+    const service = new DrawingSessionService({
+      diagnostics,
+      cadAiAdapter: new CadAiAdapter({
+        cadAiRoot: 'D:/CAD/CAD_AI',
+        runCommand: vi
+          .fn()
+          .mockResolvedValueOnce({
+            exitCode: 0,
+            stdout: JSON.stringify({ cache: cachePath }),
+            stderr: ''
+          })
+          .mockResolvedValueOnce({
+            exitCode: 0,
+            stdout: JSON.stringify({ input: sourcePath, output: convertedDxfPath }),
+            stderr: ''
+          })
+      })
+    });
+
+    await expect(service.openDrawing(sourcePath)).resolves.toMatchObject({
+      sourcePath: expect.stringMatching(/sample\.dwg$/),
+      cachePath: expect.stringMatching(/sample\.dwg\.cadqcache$/),
+      dxfPath: expect.stringMatching(/sample\.dxf$/)
+    });
+    expect(diagnostics.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'cad-ai',
+        level: 'info',
+        message: expect.stringMatching(/Opened drawing session for .*sample\.dwg$/)
+      })
+    );
+
+    await rm(fixtureRoot, { force: true, recursive: true });
+  });
+
+  it('fails clearly when a DWG cannot yield a usable DXF even after conversion', async () => {
+    const fixtureRoot = 'tests/.tmp/dwg-missing-dxf-hard-fail';
     const sourcePath = join(fixtureRoot, 'sample.dwg');
     const cachePath = join(fixtureRoot, 'sample.dwg.cadqcache');
     const diagnostics = { add: vi.fn() };
@@ -62,21 +108,28 @@ describe('DrawingSessionService', () => {
       diagnostics,
       cadAiAdapter: new CadAiAdapter({
         cadAiRoot: 'D:/CAD/CAD_AI',
-        runCommand: vi.fn().mockResolvedValue({
-          exitCode: 0,
-          stdout: JSON.stringify({ cache: cachePath }),
-          stderr: ''
-        })
+        runCommand: vi
+          .fn()
+          .mockResolvedValueOnce({
+            exitCode: 0,
+            stdout: JSON.stringify({ cache: cachePath }),
+            stderr: ''
+          })
+          .mockResolvedValueOnce({
+            exitCode: 0,
+            stdout: JSON.stringify({ input: sourcePath, output: '' }),
+            stderr: ''
+          })
       })
     });
 
-    await expect(service.openDrawing(sourcePath)).rejects.toThrow(/did not provide a usable DXF path/i);
+    await expect(service.openDrawing(sourcePath)).rejects.toThrow(/did not provide a usable DXF path after conversion/i);
     expect(diagnostics.add).toHaveBeenCalledWith(
       expect.objectContaining({
         source: 'cad-ai',
         level: 'error',
         message: expect.stringMatching(/Failed to open drawing session for .*sample\.dwg$/),
-        detail: expect.stringMatching(/did not provide a usable DXF path/i)
+        detail: expect.stringMatching(/did not provide a usable DXF path after conversion/i)
       })
     );
 
