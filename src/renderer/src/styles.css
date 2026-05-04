@@ -203,19 +203,47 @@ textarea {
 
 .drawing-entity {
   stroke: #56717e;
-  stroke-width: 1.5;
-  fill: rgba(86, 113, 126, 0.14);
+  stroke-width: 1;
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.drawing-entity--text {
+  stroke: none;
+  fill: #405764;
+  white-space: pre;
+}
+
+.drawing-entity--insert {
+  stroke: #56717e;
+  fill: none;
+}
+
+.drawing-entity--point {
+  stroke: none;
+  fill: #b03060;
+}
+
+.viewer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #405764;
+  margin-top: 0.25rem;
+  cursor: pointer;
 }
 
 .drawing-entity--highlighted {
   stroke: #c85f2e;
-  stroke-width: 2.75;
-  fill: rgba(200, 95, 46, 0.2);
+  stroke-width: 2;
+  fill: none;
 }
 
 .drawing-entity--selected {
   stroke: #0f6c70;
-  stroke-width: 3;
+  stroke-width: 2.5;
+  fill: none;
 }
 
 .feature-inspector__details,

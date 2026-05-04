@@ -51,6 +51,7 @@ export type AppStoreState = {
   prompt: string;
   isOpeningDrawing: boolean;
   isSendingPrompt: boolean;
+  showSurveyPoints: boolean;
 };
 
 type AppStore = {
@@ -63,6 +64,7 @@ type AppStore = {
     sendPrompt: () => Promise<void>;
     focusFeatures: (target: ChatReplayTarget) => void;
     selectEntity: (entityId: string) => void;
+    setShowSurveyPoints: (next: boolean) => void;
   };
 };
 
@@ -92,7 +94,8 @@ const initialState: AppStoreState = {
   selectedEntityId: null,
   prompt: '',
   isOpeningDrawing: false,
-  isSendingPrompt: false
+  isSendingPrompt: false,
+  showSurveyPoints: false
 };
 
 export function useAppStore(): AppStore {
@@ -328,7 +331,12 @@ export function useAppStore(): AppStore {
       openDrawing,
       sendPrompt,
       focusFeatures,
-      selectEntity
+      selectEntity,
+      setShowSurveyPoints: (next: boolean) =>
+        setState((current) => ({
+          ...current,
+          showSurveyPoints: next
+        }))
     }
   };
 }

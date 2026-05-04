@@ -67,6 +67,14 @@ export type ViewerTextEntity = ViewerEntityBase & {
   x: number;
   y: number;
   value: string;
+  fontSize: number;
+  rotation: number;
+};
+
+export type ViewerPointEntity = ViewerEntityBase & {
+  kind: 'point';
+  x: number;
+  y: number;
 };
 
 export type ViewerUnknownEntity = ViewerEntityBase & {
@@ -81,6 +89,7 @@ export type ViewerEntity =
   | ViewerCircleEntity
   | ViewerArcEntity
   | ViewerTextEntity
+  | ViewerPointEntity
   | ViewerUnknownEntity;
 
 export type ViewerHandleIndex = Record<EntityHandle, string>;
@@ -88,6 +97,7 @@ export type ViewerHandleIndex = Record<EntityHandle, string>;
 export type ViewerScene = {
   drawingPath: string | null;
   bounds: ViewerBounds | null;
+  focusBounds: ViewerBounds | null;
   entities: ViewerEntity[];
   handleIndex: ViewerHandleIndex;
 };

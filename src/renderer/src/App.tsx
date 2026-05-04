@@ -59,7 +59,9 @@ export function App() {
             highlightedEntityIds={state.highlightedEntityIds}
             highlightMode={state.highlightMode}
             selectedEntityId={state.selectedEntityId}
+            showSurveyPoints={state.showSurveyPoints}
             onSelectEntity={actions.selectEntity}
+            onToggleSurveyPoints={actions.setShowSurveyPoints}
           />
           <DiagnosticsPanel diagnostics={state.diagnostics} />
         </div>

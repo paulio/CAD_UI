@@ -6,7 +6,9 @@ type DrawingCanvasProps = {
   highlightedEntityIds: string[];
   highlightMode: HighlightMode;
   selectedEntityId: string | null;
+  showSurveyPoints: boolean;
   onSelectEntity: (entityId: string) => void;
+  onToggleSurveyPoints: (next: boolean) => void;
 };
 
 export function DrawingCanvas(props: DrawingCanvasProps) {
@@ -22,9 +24,10 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
     );
   }
 
-  const { bounds } = props.scene;
+  const bounds = props.scene.focusBounds ?? props.scene.bounds;
   const width = Math.max(bounds.maxX - bounds.minX, 1);
   const height = Math.max(bounds.maxY - bounds.minY, 1);
+  const markerSize = Math.max(width, height) * 0.005;
   const highlightedLabel = props.highlightedEntityIds[0] ?? 'none';
 
   return (
@@ -33,14 +36,26 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
         <h2>Viewer</h2>
         <p>{`Highlighted: ${highlightedLabel}`}</p>
         <p>{`Highlight mode: ${props.highlightMode}`}</p>
+        <label className="viewer-toggle">
+          <input
+            type="checkbox"
+            checked={props.showSurveyPoints}
+            onChange={(event) => props.onToggleSurveyPoints(event.target.checked)}
+          />
+          Show survey points
+        </label>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Drawing canvas surface">
         <rect x="0" y="0" width={width} height={height} className="drawing-canvas__frame" />
         {props.scene.entities.map((entity) => {
+          if (entity.kind === 'point' && !props.showSurveyPoints) {
+            return null;
+          }
+
           const isHighlighted = props.highlightedEntityIds.includes(entity.id);
           const isSelected = props.selectedEntityId === entity.id;
 
-          return renderEntity(entity, bounds.minX, bounds.maxY, isHighlighted, isSelected, props.onSelectEntity);
+          return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, props.onSelectEntity);
         })}
       </svg>
     </section>
@@ -51,11 +66,19 @@ function renderEntity(
   entity: ViewerEntity,
   minX: number,
   maxY: number,
+  markerSize: number,
   isHighlighted: boolean,
   isSelected: boolean,
   onSelectEntity: (entityId: string) => void
 ) {
-  const className = ['drawing-entity', isHighlighted ? 'drawing-entity--highlighted' : '', isSelected ? 'drawing-entity--selected' : '']
+  const className = [
+    'drawing-entity',
+    entity.kind === 'text' ? 'drawing-entity--text' : '',
+    entity.kind === 'insert' ? 'drawing-entity--insert' : '',
+    entity.kind === 'point' ? 'drawing-entity--point' : '',
+    isHighlighted ? 'drawing-entity--highlighted' : '',
+    isSelected ? 'drawing-entity--selected' : ''
+  ]
     .filter((token) => token.length > 0)
     .join(' ');
   const commonProps = {
@@ -78,8 +101,31 @@ function renderEntity(
 
       return <polyline key={entity.id} {...commonProps} points={toSvgPointString(entity.points, minX, maxY, entity.closed)} fill="none" />;
     }
-    case 'insert':
-      return <circle key={entity.id} {...commonProps} cx={toSvgX(entity.x, minX)} cy={toSvgY(entity.y, maxY)} r={4} />;
+    case 'insert': {
+      const insertX = toSvgX(entity.x, minX);
+      const insertY = toSvgY(entity.y, maxY);
+      const half = markerSize;
+
+      return (
+        <path
+          key={entity.id}
+          {...commonProps}
+          d={`M ${insertX - half} ${insertY} L ${insertX + half} ${insertY} M ${insertX} ${insertY - half} L ${insertX} ${insertY + half}`}
+          fill="none"
+        />
+      );
+    }
+    case 'point': {
+      return (
+        <circle
+          key={entity.id}
+          {...commonProps}
+          cx={toSvgX(entity.x, minX)}
+          cy={toSvgY(entity.y, maxY)}
+          r={markerSize * 0.4}
+        />
+      );
+    }
     case 'circle':
       return <circle key={entity.id} {...commonProps} cx={toSvgX(entity.cx, minX)} cy={toSvgY(entity.cy, maxY)} r={entity.r} fill="none" />;
     case 'arc': {
@@ -100,8 +146,19 @@ function renderEntity(
       );
     }
     case 'text':
+      const textX = toSvgX(entity.x, minX);
+      const textY = toSvgY(entity.y, maxY);
+      const transform = entity.rotation === 0 ? undefined : `rotate(${-entity.rotation} ${textX} ${textY})`;
+
       return (
-        <text key={entity.id} {...commonProps} x={toSvgX(entity.x, minX)} y={toSvgY(entity.y, maxY)}>
+        <text
+          key={entity.id}
+          {...commonProps}
+          x={textX}
+          y={textY}
+          fontSize={entity.fontSize}
+          transform={transform}
+        >
           {entity.value}
         </text>
       );

@@ -35,6 +35,7 @@ export async function buildSceneFromDxf(dxfPath: string): Promise<ViewerScene> {
   return {
     drawingPath,
     bounds: computeSceneBounds(entities),
+    focusBounds: computeFocusedSceneBounds(entities),
     entities,
     handleIndex
   };
@@ -62,6 +63,8 @@ function normalizeEntity(entity: IEntity, index: number): ViewerEntity[] {
       return normalizeArcEntity(entity as IArcEntity, index);
     case 'TEXT':
       return normalizeTextEntity(entity as ITextEntity, index);
+    case 'POINT':
+      return normalizePointEntity(entity as IEntity & { position?: IPoint }, index);
     default:
       return normalizeUnknownEntity(entity, index);
   }
@@ -245,7 +248,8 @@ function normalizeUnknownEntity(entity: IEntity, index: number): ViewerEntity[] 
 function normalizeTextEntity(entity: ITextEntity, index: number): ViewerEntity[] {
   const point = toPoint2D(entity.startPoint);
   const value = entity.text ?? '';
-  const textHeight = Number.isFinite(entity.textHeight) ? entity.textHeight : 0;
+  const textHeight = Number.isFinite(entity.textHeight) && entity.textHeight > 0 ? entity.textHeight : 0.18;
+  const rotation = Number.isFinite(entity.rotation) ? entity.rotation : 0;
   const estimatedWidth = value.length * textHeight * 0.6;
 
   return [
@@ -263,7 +267,37 @@ function normalizeTextEntity(entity: ITextEntity, index: number): ViewerEntity[]
       },
       x: point.x,
       y: point.y,
-      value
+      value,
+      fontSize: textHeight,
+      rotation
+    }
+  ];
+}
+
+function normalizePointEntity(entity: IEntity & { position?: IPoint }, index: number): ViewerEntity[] {
+  const position = entity.position;
+
+  if (position === undefined || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+    return [];
+  }
+
+  const point = toPoint2D(position);
+
+  return [
+    {
+      id: createEntityId(entity, index),
+      kind: 'point',
+      handle: readHandle(entity),
+      layer: readLayer(entity),
+      label: null,
+      bounds: {
+        minX: point.x,
+        minY: point.y,
+        maxX: point.x,
+        maxY: point.y
+      },
+      x: point.x,
+      y: point.y
     }
   ];
 }
@@ -281,6 +315,16 @@ function computeSceneBounds(entities: ViewerEntity[]): ViewerBounds | null {
     maxX: Math.max(accumulator.maxX, bounds.maxX),
     maxY: Math.max(accumulator.maxY, bounds.maxY)
   }));
+}
+
+function computeFocusedSceneBounds(entities: ViewerEntity[]): ViewerBounds | null {
+  const presentationLayers = new Set(['format', 'viewport', 'legend', 'north']);
+  const preferredEntities = entities.filter(
+    (entity) => !presentationLayers.has(entity.layer.toLowerCase()) && entity.kind !== 'point'
+  );
+  const preferredBounds = computeSceneBounds(preferredEntities);
+
+  return preferredBounds ?? computeSceneBounds(entities);
 }
 
 function computeBoundsFromPoints(points: Point2D[]): ViewerBounds | null {
