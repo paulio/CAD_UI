@@ -7,9 +7,16 @@ import {
   boundsForEntityIds,
   fitBounds,
   initialCamera,
+  screenToWorld,
   type CameraState,
   type ViewportSize
 } from '../viewer/cameraState';
+import {
+  normalizeBox,
+  selectInBox,
+  selectModeForDrag,
+  type SelectMode
+} from '../viewer/selectionHitTest';
 
 type DrawingCanvasProps = {
   scene: ViewerScene | null;
@@ -20,17 +27,28 @@ type DrawingCanvasProps = {
   layerState?: Record<string, { visible: boolean; locked: boolean }>;
   onSelectEntity: (entityId: string) => void;
   onToggleSurveyPoints: (next: boolean) => void;
+  onBoxSelect?: (result: { entityIds: string[]; mode: SelectMode }) => void;
 };
 
+type DragState =
+  | { kind: 'idle' }
+  | { kind: 'pan'; lastClient: { x: number; y: number } }
+  | {
+      kind: 'box';
+      startClient: { x: number; y: number };
+      currentClient: { x: number; y: number };
+      startWorld: { x: number; y: number };
+    };
+
 const FALLBACK_VIEWPORT: ViewportSize = { width: 1, height: 1 };
+const BOX_SELECT_THRESHOLD_PX = 4;
 
 export function DrawingCanvas(props: DrawingCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [viewport, setViewport] = useState<ViewportSize>(FALLBACK_VIEWPORT);
   const [camera, setCamera] = useState<CameraState | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
-  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<DragState>({ kind: 'idle' });
 
   const sceneBounds = props.scene?.focusBounds ?? props.scene?.bounds ?? null;
 
@@ -96,7 +114,6 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
   const onMouseDown = useCallback(
     (event: React.MouseEvent<SVGSVGElement>) => {
       if (event.button !== 0 && event.button !== 1) return;
-      // Pan when middle-button or when target is the SVG/frame (not an entity).
       const target = event.target as SVGElement;
       const isCanvasBackground =
         event.button === 1 ||
@@ -105,27 +122,93 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
       if (!isCanvasBackground) return;
 
       event.preventDefault();
-      setIsPanning(true);
-      lastPanPointRef.current = { x: event.clientX, y: event.clientY };
+      const wantsPan = event.button === 1 || event.shiftKey;
+
+      if (wantsPan || props.onBoxSelect === undefined || camera === null || svgRef.current === null) {
+        setDrag({ kind: 'pan', lastClient: { x: event.clientX, y: event.clientY } });
+        return;
+      }
+
+      const rect = svgRef.current.getBoundingClientRect();
+      const startClient = { x: event.clientX, y: event.clientY };
+      const startWorld = screenToWorld(camera, viewport, {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      });
+      setDrag({ kind: 'box', startClient, currentClient: startClient, startWorld });
     },
-    []
+    [camera, viewport, props.onBoxSelect]
   );
 
   const onMouseMove = useCallback(
     (event: React.MouseEvent<SVGSVGElement>) => {
-      if (!isPanning || lastPanPointRef.current === null) return;
-      const dxScreen = event.clientX - lastPanPointRef.current.x;
-      const dyScreen = event.clientY - lastPanPointRef.current.y;
-      lastPanPointRef.current = { x: event.clientX, y: event.clientY };
-      setCamera((current) => (current === null ? current : applyPan(current, { dxScreen, dyScreen }, viewport)));
+      setDrag((current) => {
+        if (current.kind === 'pan') {
+          const dxScreen = event.clientX - current.lastClient.x;
+          const dyScreen = event.clientY - current.lastClient.y;
+          setCamera((cam) => (cam === null ? cam : applyPan(cam, { dxScreen, dyScreen }, viewport)));
+          return { kind: 'pan', lastClient: { x: event.clientX, y: event.clientY } };
+        }
+
+        if (current.kind === 'box') {
+          return { ...current, currentClient: { x: event.clientX, y: event.clientY } };
+        }
+
+        return current;
+      });
     },
-    [isPanning, viewport]
+    [viewport]
   );
 
-  const endPan = useCallback(() => {
-    setIsPanning(false);
-    lastPanPointRef.current = null;
-  }, []);
+  const endDrag = useCallback(
+    (event?: React.MouseEvent<SVGSVGElement>) => {
+      setDrag((current) => {
+        if (current.kind === 'box' && event !== undefined && camera !== null && svgRef.current !== null && props.scene !== null && props.onBoxSelect !== undefined) {
+          const dxPx = event.clientX - current.startClient.x;
+          const dyPx = event.clientY - current.startClient.y;
+
+          if (Math.hypot(dxPx, dyPx) >= BOX_SELECT_THRESHOLD_PX) {
+            const rect = svgRef.current.getBoundingClientRect();
+            const endWorld = screenToWorld(camera, viewport, {
+              x: event.clientX - rect.left,
+              y: event.clientY - rect.top
+            });
+            const worldBox = normalizeBox(current.startWorld, endWorld);
+            const mode = selectModeForDrag(
+              { x: current.startClient.x, y: current.startClient.y },
+              { x: event.clientX, y: event.clientY }
+            );
+            const entityIds = selectInBox(props.scene.entities, worldBox, {
+              mode,
+              layerVisibility: props.layerState ?? {}
+            });
+            props.onBoxSelect({ entityIds, mode });
+          }
+        }
+
+        return { kind: 'idle' };
+      });
+    },
+    [camera, viewport, props.scene, props.layerState, props.onBoxSelect]
+  );
+
+  const isPanning = drag.kind === 'pan';
+  const marqueeRect = useMemo(() => {
+    if (drag.kind !== 'box' || svgRef.current === null) return null;
+    const rect = svgRef.current.getBoundingClientRect();
+    const startSvgX = drag.startClient.x - rect.left;
+    const startSvgY = drag.startClient.y - rect.top;
+    const currentSvgX = drag.currentClient.x - rect.left;
+    const currentSvgY = drag.currentClient.y - rect.top;
+
+    return {
+      x: Math.min(startSvgX, currentSvgX),
+      y: Math.min(startSvgY, currentSvgY),
+      width: Math.max(Math.abs(currentSvgX - startSvgX), 1),
+      height: Math.max(Math.abs(currentSvgY - startSvgY), 1),
+      mode: selectModeForDrag(drag.startClient, drag.currentClient)
+    };
+  }, [drag]);
 
   if (props.scene === null || sceneBounds === null) {
     return (
@@ -186,8 +269,8 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
           onWheel={onWheel}
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
-          onMouseUp={endPan}
-          onMouseLeave={endPan}
+          onMouseUp={endDrag}
+          onMouseLeave={endDrag}
         >
           <rect
             x={0}
@@ -214,6 +297,19 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
             return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, onSelect, isLocked);
           })}
         </svg>
+        {marqueeRect !== null ? (
+          <div
+            className={`drawing-canvas__marquee drawing-canvas__marquee--${marqueeRect.mode}`}
+            data-testid="drawing-canvas-marquee"
+            data-mode={marqueeRect.mode}
+            style={{
+              left: marqueeRect.x,
+              top: marqueeRect.y,
+              width: marqueeRect.width,
+              height: marqueeRect.height
+            }}
+          />
+        ) : null}
       </div>
     </section>
   );

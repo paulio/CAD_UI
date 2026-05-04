@@ -75,6 +75,7 @@ type AppStore = {
     selectEntity: (entityId: string) => void;
     setShowSurveyPoints: (next: boolean) => void;
     applyLayerChange: (change: LayerChange) => void;
+    applyBoxSelection: (entityIds: string[]) => void;
   };
 };
 
@@ -353,7 +354,23 @@ export function useAppStore(): AppStore {
         setState((current) => ({
           ...current,
           layerState: applyLayerChange(current.scene?.layers ?? [], current.layerState, change)
-        }))
+        })),
+      applyBoxSelection: (entityIds: string[]) =>
+        setState((current) => {
+          const handles = resolveEntityHandles(current.scene, entityIds);
+          const next = createHighlightState(current.scene, {
+            featureIds: [],
+            entityHandles: handles,
+            entityIds,
+            highlightMode: entityIds.length > 0 ? 'focus' : 'none'
+          });
+
+          return {
+            ...current,
+            ...next,
+            selectedEntityId: entityIds.length === 1 ? entityIds[0] : null
+          };
+        })
     }
   };
 }

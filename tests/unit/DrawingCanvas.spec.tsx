@@ -237,4 +237,76 @@ describe('DrawingCanvas', () => {
     expect(viewBoxAfter).not.toBeNull();
     expect(viewBoxAfter).not.toBe(viewBoxBefore);
   });
+
+  it('reports box-selected entity ids and the drag mode when the user drags a window selection', () => {
+    const scene: ViewerScene = {
+      drawingPath: 'box-select.dxf',
+      bounds: { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+      focusBounds: { minX: 0, minY: 0, maxX: 100, maxY: 100 },
+      entities: [
+        {
+          id: 'entity-near',
+          kind: 'line',
+          handle: 'L1',
+          layer: '0',
+          label: 'Near',
+          bounds: { minX: 10, minY: 10, maxX: 30, maxY: 30 },
+          x1: 10,
+          y1: 10,
+          x2: 30,
+          y2: 30
+        },
+        {
+          id: 'entity-far',
+          kind: 'line',
+          handle: 'L2',
+          layer: '0',
+          label: 'Far',
+          bounds: { minX: 80, minY: 80, maxX: 95, maxY: 95 },
+          x1: 80,
+          y1: 80,
+          x2: 95,
+          y2: 95
+        }
+      ],
+      handleIndex: { L1: 'entity-near', L2: 'entity-far' }
+    };
+
+    const fakeRect = { x: 0, y: 0, top: 0, left: 0, right: 200, bottom: 200, width: 200, height: 200, toJSON: () => ({}) } as DOMRect;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      return fakeRect;
+    };
+
+    try {
+      const onBoxSelect = vi.fn();
+      const { container } = render(
+        <DrawingCanvas
+          scene={scene}
+          highlightedEntityIds={[]}
+          highlightMode="none"
+          selectedEntityId={null}
+          onSelectEntity={vi.fn()}
+          onBoxSelect={onBoxSelect}
+          {...noopHandlers}
+        />
+      );
+
+      const surface = screen.getByRole('img', { name: 'Drawing canvas surface' }) as SVGSVGElement;
+
+      fireEvent.mouseDown(surface, { clientX: 5, clientY: 5, button: 0 });
+      fireEvent.mouseMove(surface, { clientX: 50, clientY: 50 });
+      expect(container.querySelector('[data-testid="drawing-canvas-marquee"]')).not.toBeNull();
+      fireEvent.mouseMove(surface, { clientX: 195, clientY: 195 });
+      fireEvent.mouseUp(surface, { clientX: 195, clientY: 195 });
+
+      expect(onBoxSelect).toHaveBeenCalledTimes(1);
+      const call = onBoxSelect.mock.calls[0][0] as { entityIds: string[]; mode: 'window' | 'crossing' };
+      expect(call.mode).toBe('window');
+      expect(call.entityIds).toContain('entity-near');
+      expect(container.querySelector('[data-testid="drawing-canvas-marquee"]')).toBeNull();
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    }
+  });
 });

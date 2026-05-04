@@ -243,6 +243,18 @@ textarea {
   margin-left: auto;
 }
 
+.drawing-canvas__marquee {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid #0f6c70;
+  background: rgba(15, 108, 112, 0.12);
+}
+
+.drawing-canvas__marquee--crossing {
+  border: 1px dashed #c85f2e;
+  background: rgba(200, 95, 46, 0.12);
+}
+
 .drawing-canvas__frame {
   fill: transparent;
   stroke: rgba(20, 33, 43, 0.08);

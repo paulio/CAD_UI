@@ -64,6 +64,7 @@ export function App() {
             layerState={state.layerState}
             onSelectEntity={actions.selectEntity}
             onToggleSurveyPoints={actions.setShowSurveyPoints}
+            onBoxSelect={(result) => actions.applyBoxSelection(result.entityIds)}
           />
           <DiagnosticsPanel diagnostics={state.diagnostics} />
         </div>
