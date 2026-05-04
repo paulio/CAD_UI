@@ -70,9 +70,9 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
 
     const updateViewport = () => {
       const rect = node.getBoundingClientRect();
-      const width = Math.max(rect.width, 1);
-      const height = Math.max(rect.height, 1);
-      setViewport({ width, height });
+      const width = Math.max(Math.round(rect.width), 1);
+      const height = Math.max(Math.round(rect.height), 1);
+      setViewport((current) => (current.width === width && current.height === height ? current : { width, height }));
       setViewportMeasured(true);
     };
 
@@ -84,7 +84,11 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
       return;
     }
 
-    const observer = new ResizeObserver(updateViewport);
+    const observer = new ResizeObserver(() => {
+      // Defer to the next frame so a measurement-driven re-render cannot trigger
+      // the observer again synchronously and spin up a feedback loop.
+      window.requestAnimationFrame(updateViewport);
+    });
     observer.observe(node);
     observerRef.current = observer;
   }, []);
