@@ -53,6 +53,17 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
   const [drag, setDrag] = useState<DragState>({ kind: 'idle' });
 
   const sceneBounds = props.scene?.focusBounds ?? props.scene?.bounds ?? null;
+  const layerColorIndex = useMemo(() => {
+    const map = new Map<string, string>();
+    if (props.scene !== null) {
+      for (const layer of props.scene.layers ?? []) {
+        if (typeof layer.color === 'string' && layer.color.length > 0) {
+          map.set(layer.id, layer.color);
+        }
+      }
+    }
+    return map;
+  }, [props.scene]);
 
   const measureNode = useCallback((node: HTMLDivElement | null) => {
     if (observerRef.current !== null) {
@@ -340,8 +351,9 @@ export function DrawingCanvas(props: DrawingCanvasProps) {
             const isHighlighted = props.highlightedEntityIds.includes(entity.id);
             const isSelected = props.selectedEntityId === entity.id;
             const onSelect = isLocked ? noopSelect : props.onSelectEntity;
+            const layerColor = layerColorIndex.get(entity.layer) ?? null;
 
-            return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, onSelect, isLocked);
+            return renderEntity(entity, bounds.minX, bounds.maxY, markerSize, isHighlighted, isSelected, onSelect, isLocked, layerColor);
           })}
         </svg>
         {marqueeRect !== null ? (
@@ -391,7 +403,8 @@ function renderEntity(
   isHighlighted: boolean,
   isSelected: boolean,
   onSelectEntity: (entityId: string) => void,
-  isLocked: boolean
+  isLocked: boolean,
+  layerColor: string | null
 ) {
   const className = [
     'drawing-entity',
@@ -404,10 +417,21 @@ function renderEntity(
   ]
     .filter((token) => token.length > 0)
     .join(' ');
+  // Pass the layer colour through CSS variables so the base entity rules pick
+  // it up while the highlight/selection class rules still win for clicked or
+  // AI-focused entities.
+  const layerStyle =
+    layerColor === null
+      ? undefined
+      : ({
+          '--entity-stroke': layerColor,
+          '--entity-fill': layerColor
+        } as React.CSSProperties);
   const commonProps = {
     className,
     onClick: isLocked ? undefined : () => onSelectEntity(entity.id),
-    'aria-label': entity.label ?? entity.id
+    'aria-label': entity.label ?? entity.id,
+    style: layerStyle
   };
 
   switch (entity.kind) {

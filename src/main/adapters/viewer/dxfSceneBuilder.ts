@@ -368,6 +368,14 @@ function formatLayerColor(color: number | undefined): string | null {
   }
 
   const clamped = Math.floor(color) & 0xffffff;
+
+  // ACI 7 in DWG is "auto" (black on white BG / white on black BG). dxf-parser
+  // typically reports it as either #ffffff or #000000. Both are unreadable on
+  // our near-white canvas, so fall back to the default entity stroke colour.
+  if (clamped === 0xffffff || clamped === 0x000000) {
+    return null;
+  }
+
   return `#${clamped.toString(16).padStart(6, '0')}`;
 }
 

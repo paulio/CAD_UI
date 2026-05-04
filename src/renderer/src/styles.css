@@ -351,7 +351,7 @@ textarea {
 }
 
 .drawing-entity {
-  stroke: #56717e;
+  stroke: var(--entity-stroke, #56717e);
   stroke-width: 1;
   fill: none;
   vector-effect: non-scaling-stroke;
@@ -364,18 +364,18 @@ textarea {
 
 .drawing-entity--text {
   stroke: none;
-  fill: #405764;
+  fill: var(--entity-fill, #405764);
   white-space: pre;
 }
 
 .drawing-entity--insert {
-  stroke: #56717e;
+  stroke: var(--entity-stroke, #56717e);
   fill: none;
 }
 
 .drawing-entity--point {
   stroke: none;
-  fill: #b03060;
+  fill: var(--entity-fill, #b03060);
 }
 
 .viewer-toggle {
