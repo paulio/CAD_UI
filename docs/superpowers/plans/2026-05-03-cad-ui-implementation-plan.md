@@ -833,6 +833,391 @@ git add e2e/cad-ui.e2e.ts README.md src/renderer/src/components/DiagnosticsPanel
 git commit -m "test: add end-to-end coverage and setup docs"
 ```
 
+## Task 8: Add Interactive Camera (Pan, Zoom, Fit, Fit-To-Selection)
+
+**Files:**
+- Create: `src/renderer/src/viewer/cameraState.ts`
+- Create: `src/renderer/src/viewer/useCamera.ts`
+- Modify: `src/renderer/src/components/DrawingCanvas.tsx`
+- Modify: `src/renderer/src/store/useAppStore.ts`
+- Modify: `src/renderer/src/styles.css`
+- Test: `tests/unit/cameraState.spec.ts`
+- Test: `tests/unit/DrawingCanvas.spec.tsx`
+
+Goal: Replace the static `viewBox` with an interactive 2D camera that supports drag-to-pan, wheel-to-zoom (zoom-to-cursor), `Fit All`, and `Fit Selection`. Camera math is a pure module so it can be unit-tested without the DOM. The SVG renderer applies camera state through `viewBox`.
+
+- [ ] **Step 1: Write failing camera-math tests**
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { applyPan, applyWheelZoom, fitBounds, initialCamera } from '../../src/renderer/src/viewer/cameraState';
+
+describe('cameraState', () => {
+  it('keeps the cursor world point stationary while zooming in', () => {
+    const camera = initialCamera({ minX: 0, minY: 0, maxX: 100, maxY: 100 }, { width: 200, height: 200 });
+    const cursor = { screenX: 100, screenY: 100 };
+
+    const zoomed = applyWheelZoom(camera, { ...cursor, deltaY: -100 }, { width: 200, height: 200 });
+
+    expect(zoomed.zoom).toBeGreaterThan(camera.zoom);
+    expect(zoomed.center.x).toBeCloseTo(camera.center.x, 5);
+    expect(zoomed.center.y).toBeCloseTo(camera.center.y, 5);
+  });
+
+  it('translates the camera by screen-pixel deltas during pan', () => {
+    const camera = { center: { x: 50, y: 50 }, zoom: 2 };
+    const panned = applyPan(camera, { dxScreen: 10, dyScreen: -20 }, { width: 200, height: 200 });
+
+    expect(panned.center.x).toBeCloseTo(50 - 10 / 2, 5);
+    expect(panned.center.y).toBeCloseTo(50 + 20 / 2, 5);
+  });
+
+  it('fits a target bounds with margin into the viewport', () => {
+    const camera = fitBounds({ minX: 0, minY: 0, maxX: 100, maxY: 50 }, { width: 400, height: 200 }, { marginRatio: 0.1 });
+
+    expect(camera.center.x).toBeCloseTo(50, 5);
+    expect(camera.center.y).toBeCloseTo(25, 5);
+    expect(camera.zoom).toBeGreaterThan(0);
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm run test:unit -- tests/unit/cameraState.spec.ts`
+Expected: FAIL because `cameraState` module does not exist.
+
+- [ ] **Step 3: Implement the camera module and wire it into the canvas**
+
+```ts
+export type CameraState = { center: { x: number; y: number }; zoom: number };
+export type ViewportSize = { width: number; height: number };
+
+export function initialCamera(bounds: ViewerBounds, viewport: ViewportSize): CameraState {
+  return fitBounds(bounds, viewport, { marginRatio: 0.05 });
+}
+
+export function applyPan(camera: CameraState, delta: { dxScreen: number; dyScreen: number }, viewport: ViewportSize): CameraState {
+  return {
+    zoom: camera.zoom,
+    center: {
+      x: camera.center.x - delta.dxScreen / camera.zoom,
+      y: camera.center.y + delta.dyScreen / camera.zoom
+    }
+  };
+}
+
+export function applyWheelZoom(camera: CameraState, event: { screenX: number; screenY: number; deltaY: number }, viewport: ViewportSize): CameraState {
+  const factor = Math.exp(-event.deltaY * 0.0015);
+  const nextZoom = clampZoom(camera.zoom * factor);
+  const worldBefore = screenToWorld(camera, viewport, { x: event.screenX, y: event.screenY });
+  const next = { ...camera, zoom: nextZoom };
+  const worldAfter = screenToWorld(next, viewport, { x: event.screenX, y: event.screenY });
+
+  return {
+    zoom: nextZoom,
+    center: {
+      x: camera.center.x + (worldBefore.x - worldAfter.x),
+      y: camera.center.y + (worldBefore.y - worldAfter.y)
+    }
+  };
+}
+
+export function fitBounds(bounds: ViewerBounds, viewport: ViewportSize, options: { marginRatio: number }): CameraState {
+  const width = Math.max(bounds.maxX - bounds.minX, 1e-6);
+  const height = Math.max(bounds.maxY - bounds.minY, 1e-6);
+  const margin = 1 + Math.max(0, options.marginRatio);
+  const zoom = Math.min(viewport.width / (width * margin), viewport.height / (height * margin));
+
+  return {
+    zoom: clampZoom(zoom),
+    center: { x: bounds.minX + width / 2, y: bounds.minY + height / 2 }
+  };
+}
+```
+
+```ts
+export function useCamera(scene: ViewerScene | null) {
+  const [viewport, setViewport] = useState<ViewportSize>({ width: 1, height: 1 });
+  const [camera, setCamera] = useState<CameraState>(() => initialCamera(defaultBounds, viewport));
+
+  const fitAll = useCallback(() => {
+    if (scene?.bounds) setCamera(fitBounds(scene.bounds, viewport, { marginRatio: 0.05 }));
+  }, [scene, viewport]);
+
+  const fitSelection = useCallback((entityIds: string[]) => {
+    const bounds = computeBoundsForEntities(scene, entityIds);
+    if (bounds) setCamera(fitBounds(bounds, viewport, { marginRatio: 0.2 }));
+  }, [scene, viewport]);
+
+  return { camera, setCamera, viewport, setViewport, fitAll, fitSelection };
+}
+```
+
+```tsx
+const viewBox = useMemo(() => {
+  const halfWidth = viewport.width / 2 / camera.zoom;
+  const halfHeight = viewport.height / 2 / camera.zoom;
+  return `${camera.center.x - halfWidth} ${camera.center.y - halfHeight} ${halfWidth * 2} ${halfHeight * 2}`;
+}, [camera, viewport]);
+```
+
+The DOM canvas component listens for `wheel`, `mousedown`/`mousemove`/`mouseup`, and a `ResizeObserver` to keep `viewport` in sync. Y-axis sign is inverted between drawing space and SVG to match the existing renderer.
+
+- [ ] **Step 4: Add a renderer interaction test for fit-to-selection**
+
+```tsx
+it('fits the viewport to the currently selected entity', async () => {
+  const scene = makeFixtureScene();
+  render(<DrawingCanvas scene={scene} highlightedEntityIds={[]} highlightMode="none" selectedEntityId="entity-far" showSurveyPoints={false} onSelectEntity={() => undefined} onToggleSurveyPoints={() => undefined} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Fit selection' }));
+
+  await waitFor(() => {
+    const svg = screen.getByRole('img', { name: 'Drawing canvas surface' });
+    expect(svg.getAttribute('viewBox')).not.toBeNull();
+  });
+});
+```
+
+- [ ] **Step 5: Run the unit tests and verify camera math + UI pass**
+
+Run: `npm run test:unit -- tests/unit/cameraState.spec.ts tests/unit/DrawingCanvas.spec.tsx`
+Expected: PASS for camera math, fit, pan/zoom, and fit-to-selection.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/renderer/src/viewer/cameraState.ts src/renderer/src/viewer/useCamera.ts src/renderer/src/components/DrawingCanvas.tsx src/renderer/src/store/useAppStore.ts src/renderer/src/styles.css tests/unit/cameraState.spec.ts tests/unit/DrawingCanvas.spec.tsx
+git commit -m "feat: interactive viewer camera with pan, zoom, fit"
+```
+
+## Task 9: Add Layer Panel (Visibility, Lock, Isolate, Persistence)
+
+**Files:**
+- Modify: `src/shared/viewerTypes.ts`
+- Modify: `src/main/adapters/viewer/dxfSceneBuilder.ts`
+- Create: `src/renderer/src/components/LayerPanel.tsx`
+- Modify: `src/renderer/src/store/useAppStore.ts`
+- Modify: `src/renderer/src/components/DrawingCanvas.tsx`
+- Modify: `src/renderer/src/App.tsx`
+- Modify: `src/renderer/src/styles.css`
+- Modify: `src/main/services/settingsStore.ts`
+- Modify: `src/shared/contracts.ts`
+- Test: `tests/unit/dxfSceneBuilder.spec.ts`
+- Test: `tests/unit/LayerPanel.spec.tsx`
+
+Goal: Surface DWG layers as first-class UI. Each layer has visibility, lock, and isolate controls. Hidden layers do not render or hit-test. Locked layers render but are not selectable. Per-drawing layer state persists across restarts.
+
+- [ ] **Step 1: Write the failing scene-builder layer test**
+
+```ts
+it('produces a layer index with default visibility, lock, and entity counts', async () => {
+  const scene = await buildSceneFromDxf('tests/fixtures/site.dxf');
+
+  const siteLayer = scene.layers.find((layer) => layer.id.toLowerCase() === 'site');
+  expect(siteLayer).toBeDefined();
+  expect(siteLayer?.visible).toBe(true);
+  expect(siteLayer?.locked).toBe(false);
+  expect(siteLayer?.entityCount).toBeGreaterThan(0);
+});
+```
+
+- [ ] **Step 2: Write the failing layer-panel UI test**
+
+```tsx
+it('hides entities when their layer is toggled off and isolates a single layer', () => {
+  const scene = makeFixtureScene({ layers: ['SITE', 'GRID'] });
+  const onChange = vi.fn();
+
+  render(<LayerPanel layers={scene.layers} onChange={onChange} />);
+
+  fireEvent.click(screen.getByRole('checkbox', { name: 'SITE visible' }));
+  expect(onChange).toHaveBeenCalledWith({ id: 'SITE', patch: { visible: false } });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Isolate GRID' }));
+  expect(onChange).toHaveBeenCalledWith({ id: 'GRID', patch: { isolate: true } });
+});
+```
+
+- [ ] **Step 3: Run the tests to verify they fail**
+
+Run: `npm run test:unit -- tests/unit/dxfSceneBuilder.spec.ts tests/unit/LayerPanel.spec.tsx`
+Expected: FAIL because `scene.layers` and `LayerPanel` do not exist yet.
+
+- [ ] **Step 4: Implement layer extraction, panel, store wiring, and persistence**
+
+```ts
+export type ViewerLayer = {
+  id: string;
+  name: string;
+  color: string | null;
+  visible: boolean;
+  locked: boolean;
+  entityCount: number;
+};
+
+export type ViewerScene = {
+  drawingPath: string | null;
+  bounds: ViewerBounds | null;
+  focusBounds: ViewerBounds | null;
+  entities: ViewerEntity[];
+  layers: ViewerLayer[];
+  handleIndex: ViewerHandleIndex;
+};
+```
+
+```ts
+function buildLayerIndex(entities: ViewerEntity[], dxfLayers: Record<string, IDxfLayer>): ViewerLayer[] {
+  const counts = new Map<string, number>();
+  for (const entity of entities) counts.set(entity.layer, (counts.get(entity.layer) ?? 0) + 1);
+
+  return [...counts.keys()].sort().map((id) => ({
+    id,
+    name: id,
+    color: dxfLayers[id]?.color ? `#${dxfLayers[id].color.toString(16).padStart(6, '0')}` : null,
+    visible: dxfLayers[id]?.visible !== false,
+    locked: false,
+    entityCount: counts.get(id) ?? 0
+  }));
+}
+```
+
+```tsx
+export function LayerPanel({ layers, onChange }: { layers: ViewerLayer[]; onChange: (change: { id: string; patch: Partial<ViewerLayer> & { isolate?: boolean } }) => void }) {
+  return (
+    <aside className="layer-panel" aria-label="Layers">
+      <h2>Layers</h2>
+      <ul>
+        {layers.map((layer) => (
+          <li key={layer.id} className={layer.visible ? 'layer' : 'layer layer--hidden'}>
+            <input type="checkbox" aria-label={`${layer.id} visible`} checked={layer.visible} onChange={(event) => onChange({ id: layer.id, patch: { visible: event.target.checked } })} />
+            <span className="layer__color" style={{ background: layer.color ?? '#888' }} />
+            <span className="layer__name">{layer.id}</span>
+            <span className="layer__count">{layer.entityCount}</span>
+            <button type="button" aria-label={`Lock ${layer.id}`} onClick={() => onChange({ id: layer.id, patch: { locked: !layer.locked } })}>{layer.locked ? '🔒' : '🔓'}</button>
+            <button type="button" aria-label={`Isolate ${layer.id}`} onClick={() => onChange({ id: layer.id, patch: { isolate: true } })}>Isolate</button>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+```
+
+The renderer applies layer visibility by filtering entities at draw time and skipping hit-testing on locked or hidden layers. Per-drawing layer state is stored in `AppSettings.drawingLayerState` keyed by absolute drawing path.
+
+- [ ] **Step 5: Run the unit tests for layers and persistence**
+
+Run: `npm run test:unit -- tests/unit/dxfSceneBuilder.spec.ts tests/unit/LayerPanel.spec.tsx tests/unit/settingsStore.spec.ts`
+Expected: PASS with layer extraction, UI controls, and persistence verified.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/shared/viewerTypes.ts src/shared/contracts.ts src/main/adapters/viewer/dxfSceneBuilder.ts src/main/services/settingsStore.ts src/renderer/src/components/LayerPanel.tsx src/renderer/src/components/DrawingCanvas.tsx src/renderer/src/store/useAppStore.ts src/renderer/src/App.tsx src/renderer/src/styles.css tests/unit/dxfSceneBuilder.spec.ts tests/unit/LayerPanel.spec.tsx tests/unit/settingsStore.spec.ts
+git commit -m "feat: add layer panel with visibility, lock, isolate"
+```
+
+## Task 10: Add Box-Select (Window And Crossing Semantics)
+
+**Files:**
+- Create: `src/renderer/src/viewer/selectionHitTest.ts`
+- Modify: `src/renderer/src/components/DrawingCanvas.tsx`
+- Modify: `src/renderer/src/store/useAppStore.ts`
+- Modify: `src/renderer/src/styles.css`
+- Test: `tests/unit/selectionHitTest.spec.ts`
+- Test: `tests/unit/DrawingCanvas.spec.tsx`
+
+Goal: Hold left-mouse and drag on empty canvas to box-select. Left-to-right drag selects entities fully enclosed (window). Right-to-left drag selects any entity that crosses the box (crossing). Hidden and locked layers are excluded. The active selection drives `selectedEntityIds` for chat context.
+
+- [ ] **Step 1: Write the failing hit-test math test**
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { selectInBox } from '../../src/renderer/src/viewer/selectionHitTest';
+
+const entities = [
+  { id: 'inside', layer: 'A', bounds: { minX: 5, minY: 5, maxX: 9, maxY: 9 } },
+  { id: 'crossing', layer: 'A', bounds: { minX: 8, minY: 0, maxX: 12, maxY: 4 } },
+  { id: 'outside', layer: 'A', bounds: { minX: 20, minY: 20, maxX: 30, maxY: 30 } },
+  { id: 'hidden', layer: 'B', bounds: { minX: 1, minY: 1, maxX: 4, maxY: 4 } }
+] as const;
+
+describe('selectInBox', () => {
+  const box = { minX: 0, minY: 0, maxX: 10, maxY: 10 };
+  const layerVisibility = { A: { visible: true, locked: false }, B: { visible: false, locked: false } };
+
+  it('window mode selects only fully enclosed entities on visible unlocked layers', () => {
+    expect(selectInBox(entities, box, { mode: 'window', layerVisibility })).toEqual(['inside']);
+  });
+
+  it('crossing mode also selects entities that intersect the box', () => {
+    expect(selectInBox(entities, box, { mode: 'crossing', layerVisibility })).toEqual(['inside', 'crossing']);
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm run test:unit -- tests/unit/selectionHitTest.spec.ts`
+Expected: FAIL because `selectionHitTest` does not exist.
+
+- [ ] **Step 3: Implement the hit-test function and the SVG drag overlay**
+
+```ts
+export type SelectMode = 'window' | 'crossing';
+
+export function selectInBox(
+  entities: ReadonlyArray<{ id: string; layer: string; bounds: ViewerBounds }>,
+  box: ViewerBounds,
+  options: { mode: SelectMode; layerVisibility: Record<string, { visible: boolean; locked: boolean }> }
+): string[] {
+  return entities
+    .filter((entity) => {
+      const layer = options.layerVisibility[entity.layer];
+      if (layer && (!layer.visible || layer.locked)) return false;
+      return options.mode === 'window' ? isContained(entity.bounds, box) : intersects(entity.bounds, box);
+    })
+    .map((entity) => entity.id);
+}
+```
+
+```tsx
+// DrawingCanvas adds a transient <rect className="drawing-canvas__marquee" /> while dragging.
+// On mouseup, it computes the world-space box, derives mode from drag direction,
+// and calls actions.replaceSelection(selectInBox(...)).
+```
+
+- [ ] **Step 4: Write the failing renderer drag test**
+
+```tsx
+it('selects entities inside a window-drag box and updates highlights', async () => {
+  const scene = makeFixtureScene({ withFarLeftEntity: true });
+  const onSelect = vi.fn();
+  render(<DrawingCanvas scene={scene} highlightedEntityIds={[]} highlightMode="none" selectedEntityId={null} showSurveyPoints={false} onSelectEntity={() => undefined} onToggleSurveyPoints={() => undefined} onBoxSelect={onSelect} />);
+
+  const surface = screen.getByRole('img', { name: 'Drawing canvas surface' });
+  fireEvent.mouseDown(surface, { clientX: 10, clientY: 10, button: 0 });
+  fireEvent.mouseMove(surface, { clientX: 200, clientY: 200 });
+  fireEvent.mouseUp(surface, { clientX: 200, clientY: 200 });
+
+  await waitFor(() => expect(onSelect).toHaveBeenCalledWith({ entityIds: expect.any(Array), mode: 'window' }));
+});
+```
+
+- [ ] **Step 5: Run the unit tests to verify they pass**
+
+Run: `npm run test:unit -- tests/unit/selectionHitTest.spec.ts tests/unit/DrawingCanvas.spec.tsx`
+Expected: PASS with hit-test, marquee rendering, and selection callback verified.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/renderer/src/viewer/selectionHitTest.ts src/renderer/src/components/DrawingCanvas.tsx src/renderer/src/store/useAppStore.ts src/renderer/src/styles.css tests/unit/selectionHitTest.spec.ts tests/unit/DrawingCanvas.spec.tsx
+git commit -m "feat: add box-select with window and crossing semantics"
+```
+
 ## Spec Coverage Check
 
 - Copilot CLI auth and model use: covered by Task 3 and Task 6.
@@ -841,6 +1226,9 @@ git commit -m "test: add end-to-end coverage and setup docs"
 - 2D drawing rendering: covered by Task 5 and Task 6.
 - Chat-triggered highlighting by stable references: covered by Task 5 and Task 6.
 - Clear diagnostics and failure states: covered by Task 4 and Task 7.
+- Interactive viewer navigation (pan, zoom, fit, fit-to-selection): covered by Task 8.
+- Layer visibility, lock, and isolation: covered by Task 9.
+- Box-select with window/crossing semantics for chat context: covered by Task 10.
 
 ## Placeholder Scan
 
