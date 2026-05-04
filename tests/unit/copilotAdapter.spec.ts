@@ -54,7 +54,7 @@ describe('CopilotAdapter', () => {
       'gpt-5.4-mini',
       '-p',
       'Reply with AUTH_OK only.',
-      '--allow-all-tools',
+      '--allow-all',
       '--output-format',
       'json',
       '--no-custom-instructions'
@@ -99,7 +99,7 @@ describe('CopilotAdapter', () => {
       'gpt-5.4',
       '-p',
       'Summarize the drawing.',
-      '--allow-all-tools',
+      '--allow-all',
       '--output-format',
       'json',
       '--no-custom-instructions'

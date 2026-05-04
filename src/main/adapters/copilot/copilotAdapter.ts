@@ -6,7 +6,7 @@ import { parseModelCatalog, parseProbeResult } from './modelCatalog';
 
 const PROBE_MODEL = 'gpt-5.4-mini';
 const PROBE_PROMPT = 'Reply with AUTH_OK only.';
-const PROMPT_FLAGS = ['--allow-all-tools', '--output-format', 'json', '--no-custom-instructions'] as const;
+const PROMPT_FLAGS = ['--allow-all', '--output-format', 'json', '--no-custom-instructions'] as const;
 const MODEL_DISCOVERY_TIMEOUT_MS = 30_000;
 const PROMPT_TIMEOUT_MS = 180_000;
 
