@@ -47,7 +47,7 @@ describe('DrawingCanvas', () => {
       <DrawingCanvas scene={scene} highlightedEntityIds={[]} highlightMode="none" selectedEntityId={null} onSelectEntity={vi.fn()} {...noopHandlers} />
     );
 
-    expect(screen.getByRole('button', { name: 'Wrap arc' })).toHaveAttribute('d', 'M 10 5 A 5 5 0 1 0 15 10');
+    expect(screen.getByLabelText('Wrap arc')).toHaveAttribute('d', 'M 10 5 A 5 5 0 1 0 15 10');
   });
 
   it('visually closes closed polylines by repeating the first point in the rendered SVG polyline', () => {
@@ -94,7 +94,7 @@ describe('DrawingCanvas', () => {
       <DrawingCanvas scene={scene} highlightedEntityIds={[]} highlightMode="none" selectedEntityId={null} onSelectEntity={vi.fn()} {...noopHandlers} />
     );
 
-    expect(screen.getByRole('button', { name: 'Closed boundary' })).toHaveAttribute('points', '0,10 10,10 10,0 0,10');
+    expect(screen.getByLabelText('Closed boundary')).toHaveAttribute('points', '0,10 10,10 10,0 0,10');
   });
 
   it('renders bulged polyline segments as curved SVG path commands instead of a straight polyline chord', () => {
@@ -139,7 +139,7 @@ describe('DrawingCanvas', () => {
       <DrawingCanvas scene={scene} highlightedEntityIds={[]} highlightMode="none" selectedEntityId={null} onSelectEntity={vi.fn()} {...noopHandlers} />
     );
 
-    const curvedPath = screen.getByRole('button', { name: 'Curved boundary' });
+    const curvedPath = screen.getByLabelText('Curved boundary');
 
     expect(curvedPath.tagName.toLowerCase()).toBe('path');
     expect(curvedPath).toHaveAttribute('d', 'M 0 0 A 5 5 0 0 0 10 0');

@@ -357,6 +357,11 @@ textarea {
   vector-effect: non-scaling-stroke;
 }
 
+.drawing-entity:focus,
+.drawing-entity:focus-visible {
+  outline: none;
+}
+
 .drawing-entity--text {
   stroke: none;
   fill: #405764;
@@ -383,28 +388,32 @@ textarea {
   cursor: pointer;
 }
 
-.drawing-entity--highlighted,
-.drawing-entity--selected {
-  /* Legacy classes intentionally left as a no-op. Selection and AI-highlight
-     are drawn as bounding-box overlays so they cannot distort the entity's
-     own geometry (especially text glyphs at high zoom). */
-}
-
-.drawing-overlay {
-  fill: none;
-  pointer-events: none;
-  vector-effect: non-scaling-stroke;
-}
-
-.drawing-overlay--highlighted {
+/* Selection and AI highlight: just swap the colour of the entity. No stroke
+   width changes (which can blow up text glyphs at high zoom), no fill changes
+   on stroked entities, no overlays. */
+.drawing-entity--highlighted {
   stroke: #c85f2e;
-  stroke-width: 2;
-  stroke-dasharray: 4 3;
 }
 
-.drawing-overlay--selected {
+.drawing-entity--selected {
   stroke: #0f6c70;
-  stroke-width: 2.5;
+}
+
+/* For text and points (which are filled, not stroked) we recolour the fill. */
+.drawing-entity--text.drawing-entity--highlighted {
+  fill: #c85f2e;
+}
+
+.drawing-entity--text.drawing-entity--selected {
+  fill: #0f6c70;
+}
+
+.drawing-entity--point.drawing-entity--highlighted {
+  fill: #c85f2e;
+}
+
+.drawing-entity--point.drawing-entity--selected {
+  fill: #0f6c70;
 }
 
 .drawing-entity--locked {
