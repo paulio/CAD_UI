@@ -2,7 +2,7 @@
 
 CAD_UI is a Windows-first Electron desktop app for opening CAD drawings, sending focused prompts through GitHub Copilot CLI, and surfacing CAD_AI diagnostics and drawing highlights in a renderer shell. It is the UI-focused companion to the sister project [cadq](https://github.com/paulio/cadq).
 
-> The Electron app source currently lives on the `feature/cad-ui-implementation` branch (also checked out under [.worktrees/cad-ui-implementation/](.worktrees/cad-ui-implementation/)). The commands below are run from that working tree.
+> The Electron app source lives on the `feature/cad-ui-implementation` branch. Follow the Install steps below to check it out before running any commands.
 
 ## Prerequisites
 
@@ -16,7 +16,19 @@ CAD_UI is a Windows-first Electron desktop app for opening CAD drawings, sending
 
 ## Install
 
+**Option A – work directly on the feature branch** (simplest for most contributors):
+
 ```powershell
+git switch feature/cad-ui-implementation
+npm install
+```
+
+**Option B – keep your current branch and use a worktree** (lets you have both branches checked out simultaneously):
+
+```powershell
+# First time only – creates .worktrees\cad-ui-implementation
+git worktree add .worktrees\cad-ui-implementation feature/cad-ui-implementation
+
 cd .worktrees\cad-ui-implementation
 npm install
 ```
