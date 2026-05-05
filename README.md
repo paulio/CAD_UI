@@ -10,8 +10,8 @@ CAD_UI is a Windows-first Electron desktop app for opening CAD drawings, sending
 - Node.js 22.x with `npm` on `PATH`
 - **PowerShell 7+ (`pwsh.exe`) on `PATH`** — Copilot CLI uses it to run shell tools such as `cadq`. Install via `winget install Microsoft.PowerShell` or from <https://aka.ms/powershell>.
 - GitHub Copilot CLI installed and authenticated with `copilot login`
-- The sibling CAD_AI project available at `D:\CAD\CAD_AI`
-- Either `D:\CAD\CAD_AI\.venv\Scripts\cadq.exe` or a usable Python environment for the CAD_AI fallback path
+- The sibling CAD_AI project available in the location configured for your environment (for example, `D:\CAD\CAD_AI`)
+- Either the `cadq.exe` from that CAD_AI environment (for example, `D:\CAD\CAD_AI\.venv\Scripts\cadq.exe`) or another usable Python environment for the CAD_AI fallback path
 - ODA File Converter installed if you need `.dwg` ingestion; `.dxf` inputs work without ODA
 
 ## Install
